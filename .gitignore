@@ -1,0 +1,14 @@
+# Binarios compilados
+programa1
+programa2
+*.o
+*.exe
+*.out
+
+# Documentacion generada por Doxygen (se regenera con `doxygen Doxyfile`)
+docs/
+
+# Basura habitual del editor/SO
+*~
+.vscode/
+.DS_Store
