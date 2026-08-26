@@ -2,6 +2,8 @@
  * @file programa2.c
  * @brief Imprime el mismo texto dos veces -una con printf(), otra con
  *        write()-, en ese orden, sin fflush y sin salto de linea final.
+ * @author Edward Davila
+ * @author Miguel Angel Perez Mera
  *
  * Objetivo: observar que el orden de aparicion en pantalla no coincide
  * con el orden en que se llaman las funciones en el codigo. La

@@ -1,5 +1,7 @@
 # Taller: llamadas al sistema
 
+**Autores:** Edward Davila, Miguel Angel Perez Mera ([@miguelperez80](https://github.com/miguelperez80))
+
 Laboratorio de Sistemas Operativos. Dos programas en C que distinguen una
 llamada al sistema (`write`, `getpid`, `getppid`) de una función de
 biblioteca (`printf`), verificando siempre el valor de retorno.

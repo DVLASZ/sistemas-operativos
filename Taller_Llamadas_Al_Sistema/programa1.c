@@ -2,6 +2,8 @@
  * @file programa1.c
  * @brief Identifica un proceso y su padre, y escribe un mensaje en la
  *        salida estandar usando la llamada al sistema write(), no printf().
+ * @author Edward Davila
+ * @author Miguel Angel Perez Mera
  *
  * Requisitos del taller:
  *  - Obtener pid propio (getpid) y pid del padre (getppid).

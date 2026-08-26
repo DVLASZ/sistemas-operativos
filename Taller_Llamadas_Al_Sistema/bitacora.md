@@ -1,5 +1,7 @@
 # Bitácora — Taller: llamadas al sistema
 
+**Autores:** Edward Davila, Miguel Angel Perez Mera
+
 **Entorno de verificación:** Debian 13 (trixie), `gcc 14.2.0`, corriendo en
 una máquina virtual de VirtualBox (la del laboratorio de la materia).
 
