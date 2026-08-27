@@ -1,9 +1,14 @@
 # Binarios compilados
 programa1
 programa2
+infoproc
 *.o
 *.exe
 *.out
+
+# Videos de prueba generados para el taller de procesos y scripts
+*.mkv
+*.mp4
 
 # Documentacion generada por Doxygen (se regenera con `doxygen Doxyfile`)
 docs/
