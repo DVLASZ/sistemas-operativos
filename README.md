@@ -10,6 +10,9 @@ qué se trata y cómo compilarlo/ejecutarlo.
 - [`Taller_Llamadas_Al_Sistema/`](./Taller_Llamadas_Al_Sistema) — taller
   de llamadas al sistema: distinguir `write()`/`getpid()`/`getppid()`
   (llamadas al sistema) de `printf()` (función de biblioteca).
+- [`Taller_Procesos_Y_Scripts/`](./Taller_Procesos_Y_Scripts) — taller
+  de procesos, scripts y llamadas al sistema: observar `/proc` desde el
+  shell y desde C, y un script de conversión de video por lotes.
 
 ## Entorno
 
