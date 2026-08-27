@@ -22,6 +22,8 @@ tarea de administración por lotes.
   directorio a `.mp4` con `ffmpeg`, sin reconvertir los que ya existen.
 - `Makefile` — publicado con el enunciado; construye `infoproc`
   (`make`) y limpia lo generado (`make clean`).
+- `Doxyfile` — configuración de Doxygen para generar la documentación
+  de `infoproc.c` a partir de sus comentarios `/** ... */`.
 - `bitacora.md` — documentación de la práctica.
 
 ## Compilar y ejecutar
@@ -40,8 +42,18 @@ chmod +x infoproc.sh convertir.sh
 ./convertir.sh [directorio]   # por defecto, el directorio actual
 ```
 
+## Generar la documentación de infoproc.c
+
+```bash
+doxygen Doxyfile
+```
+
+Genera `docs/html/index.html`. No se versiona (ver `.gitignore` de la
+raíz del repo): se regenera localmente cuando se necesita.
+
 ## Requisitos
 
 - `gcc`, `make` (para `infoproc.c`)
 - `bash` (para los scripts)
 - `ffmpeg` (solo para `convertir.sh`)
+- `doxygen` (solo para generar la documentación de `infoproc.c`)

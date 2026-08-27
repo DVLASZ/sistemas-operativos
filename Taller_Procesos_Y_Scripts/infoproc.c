@@ -1,12 +1,13 @@
-/*
- * infoproc.c - informa Name, State, PPid y Threads de un proceso vivo,
- * leyendo /proc/PID/status exclusivamente con llamadas al sistema
- * (open, read, close), y reporta el pid/ppid del propio programa.
+/**
+ * @file infoproc.c
+ * @brief Informa Name, State, PPid y Threads de un proceso vivo, leyendo
+ *        /proc/PID/status exclusivamente con llamadas al sistema (open,
+ *        read, close), y reporta el pid/ppid del propio programa.
+ * @author Edward Esteban Davila Salazar
+ * @author Miguel Angel Perez Mera
  *
  * Taller: procesos, scripts y llamadas al sistema.
  * Laboratorio de Sistemas Operativos.
- *
- * Autores: Edward Esteban Davila Salazar, Miguel Angel Perez Mera
  *
  * Uso: ./infoproc [pid]
  *   Sin argumento, informa sobre si mismo.
@@ -30,7 +31,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-/*
+/**
+ * @brief Tamaño del buffer donde se acumula el contenido de /proc/PID/status.
+ *
  * Los archivos de /proc reportan tamaño 0 con stat, porque su contenido
  * se genera al leerlos: no hay ningun tamaño real que consultar de
  * antemano. Por eso el buffer se dimensiona con holgura en lugar de
@@ -38,14 +41,17 @@
  */
 #define TAM_BUFFER 65536
 
-/*
- * Lee el archivo completo indicado por ruta hacia buffer (de capacidad
- * cap bytes), usando unicamente open/read/close, y lo termina en '\0'.
+/**
+ * @brief Lee un archivo completo usando unicamente open/read/close.
  *
  * read() entrega bytes sin atender lineas: puede devolver menos de lo
  * pedido y continuar en la llamada siguiente donde quedo, asi que se
  * repite hasta que devuelva 0 (fin de archivo) o el buffer se llene.
  *
+ * @param ruta   Ruta del archivo a leer.
+ * @param buffer Buffer donde se acumula el contenido leido.
+ * @param cap    Capacidad de buffer, en bytes (incluye el espacio para
+ *               el '\0' final).
  * @return Cantidad de bytes leidos (sin contar el '\0'); -1 si ocurrio
  *         un error (ya informado con perror) o si el contenido no cupo
  *         en el buffer (informado por este mismo mensaje de error).
@@ -100,12 +106,18 @@ static ssize_t leer_archivo_completo(const char *ruta, char *buffer, size_t cap)
     return (ssize_t)total;
 }
 
-/*
- * Busca en contenido (el texto completo de /proc/PID/status) la primera
- * linea que empieza por etiqueta (por ejemplo "Name:") y copia en valor
- * (de capacidad tam_valor) el texto que sigue, sin el salto de linea
- * final. Usa solo funciones de string.h sobre el buffer ya leido.
+/**
+ * @brief Extrae el valor de un campo de /proc/PID/status ya leido en memoria.
  *
+ * Busca en contenido la primera linea que empieza por etiqueta (por
+ * ejemplo "Name:") y copia en valor el texto que sigue, sin el salto de
+ * linea final. Usa solo funciones de string.h sobre el buffer ya leido
+ * con leer_archivo_completo(); no vuelve a tocar el archivo.
+ *
+ * @param contenido Texto completo de /proc/PID/status, terminado en '\0'.
+ * @param etiqueta  Etiqueta a buscar, incluido el ':' (ej. "Name:").
+ * @param valor     Buffer de salida donde se copia el valor encontrado.
+ * @param tam_valor Capacidad de valor, en bytes.
  * @return 0 si encontro la etiqueta; -1 si no aparece en el contenido.
  */
 static int extraer_campo(const char *contenido, const char *etiqueta, char *valor, size_t tam_valor) {
@@ -142,6 +154,16 @@ static int extraer_campo(const char *contenido, const char *etiqueta, char *valo
     return -1;
 }
 
+/**
+ * @brief Informa Name/State/PPid/Threads del proceso recibido como
+ *        argumento (o del propio proceso si no recibe ninguno), y el
+ *        pid/ppid del propio programa.
+ * @param argc Cantidad de argumentos.
+ * @param argv argv[1], si esta presente, es el pid a consultar.
+ * @return EXIT_SUCCESS si pudo leer e interpretar /proc/PID/status;
+ *         EXIT_FAILURE ante cualquier error (pid invalido, error de
+ *         lectura, o formato inesperado del archivo).
+ */
 int main(int argc, char *argv[]) {
     pid_t pid_consultado;
 
