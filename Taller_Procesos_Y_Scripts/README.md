@@ -24,7 +24,11 @@ tarea de administración por lotes.
   (`make`) y limpia lo generado (`make clean`).
 - `Doxyfile` — configuración de Doxygen para generar la documentación
   de `infoproc.c` a partir de sus comentarios `/** ... */`.
-- `bitacora.md` — documentación de la práctica.
+- `bitacora.md` — documentación de la práctica, con capturas de cada
+  avance. La mayor parte se tomó en la VM Debian de Edward; la parte 5
+  incluye además evidencia de Miguel, resuelta en su propia VM con
+  Ubuntu.
+- `capturas/` — capturas de pantalla referenciadas desde `bitacora.md`.
 
 ## Compilar y ejecutar
 

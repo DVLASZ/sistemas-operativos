@@ -5,11 +5,15 @@
 **Entorno de verificación:** Debian 13 (trixie), `gcc 14.2.0`, `bash`,
 máquina virtual de VirtualBox del laboratorio de la materia. Usuario de
 trabajo: `DVLASZ` (login institucional, con permisos de administrador
-vía el grupo `sudo`), tal como pide la preparación del taller.
+vía el grupo `sudo`), tal como pide la preparación del taller. Miguel
+resolvió la parte 5 (conversión de video) en su propia VM, con Ubuntu en
+lugar de Debian, usuario `milogin` — se aclara puntualmente en esa
+sección.
 
 Esta bitácora sigue el orden del enunciado, punto por punto, con una
 captura de cada avance (no solo las que el enunciado exige) tomada desde
-la sesión de `DVLASZ`.
+la sesión de `DVLASZ`, salvo donde se indica explícitamente que la
+evidencia es de la sesión de Miguel.
 
 ## Documentación consultada
 
@@ -468,4 +472,38 @@ nada nuevo que convertir.
 Con esta última, quedan cubiertas las 3 capturas que exige el punto 32
 del enunciado (instalación de ffmpeg, primera y segunda ejecución de
 `convertir.sh`), todas desde la sesión de `DVLASZ`.
+
+### Evidencia de Miguel Angel Perez Mera (parte 5, punto 32)
+
+El enunciado pide que, en una entrega en pareja, al menos una de las
+tres capturas del punto 32 se tome desde la sesión de cada integrante.
+Miguel resolvió esta parte en su propia máquina virtual, con una
+diferencia respecto al entorno usado en el resto de esta bitácora: **su
+VM corre Ubuntu, no Debian** (la VM de Edward). El usuario de trabajo en
+su sesión es `milogin`.
+
+```bash
+ffmpeg -version
+ffmpeg -f lavfi -i testsrc=duration=3:size=320x240 clase1.mkv
+ffmpeg -f lavfi -i testsrc=duration=3:size=320x240 clase2.mkv
+ffmpeg -f lavfi -i testsrc=duration=3:size=320x240 clase3.mkv
+ffmpeg -f lavfi -i testsrc=duration=3:size=320x240 clase.2026.mkv
+```
+
+![ffmpeg -version y generación de los 4 videos de prueba, desde la sesión de milogin en Ubuntu](capturas/20-miguel-ffmpeg-y-generacion-videos.jpg)
+
+```bash
+nano convertir.sh
+chmod +x convertir.sh
+./convertir.sh
+./convertir.sh
+```
+
+Esta captura muestra las **dos** ejecuciones seguidas de `convertir.sh`
+en la sesión de Miguel: la primera convierte los 4 archivos
+(`Convertidos: 4  Saltados: 0`), y la segunda los salta todos sin
+convertir ni fallar nada (`Convertidos: 0  Saltados: 4`), igual que en
+la sesión de `DVLASZ`.
+
+![Las dos ejecuciones de convertir.sh en la sesión de milogin: primera convierte los 4, segunda los salta todos](capturas/19-miguel-convertirsh-ambas-ejecuciones.jpg)
 
