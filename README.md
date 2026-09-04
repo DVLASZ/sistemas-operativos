@@ -13,6 +13,8 @@ qué se trata y cómo compilarlo/ejecutarlo.
 - [`Taller_Procesos_Y_Scripts/`](./Taller_Procesos_Y_Scripts) — taller
   de procesos, scripts y llamadas al sistema: observar `/proc` desde el
   shell y desde C, y un script de conversión de video por lotes.
+- [`Taller_Creacion_De_Procesos/`](./Taller_Creacion_De_Procesos) —
+  taller de creación de procesos: `fork`, `exec` y `waitpid` en C.
 
 ## Entorno
 

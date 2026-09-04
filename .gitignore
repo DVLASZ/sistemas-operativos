@@ -2,6 +2,7 @@
 programa1
 programa2
 infoproc
+procesos
 *.o
 *.exe
 *.out
