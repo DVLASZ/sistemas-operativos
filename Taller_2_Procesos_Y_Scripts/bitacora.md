@@ -203,7 +203,7 @@ detiene.
 ### Punto 12: formato crudo de una línea de `/proc/status`
 
 ```bash
-cd ~/"Lab. Sistemas Operativos/Taller_Procesos_Y_Scripts"
+cd ~/"Lab. Sistemas Operativos/Taller_2_Procesos_Y_Scripts"
 ls -la infoproc.sh
 grep Threads /proc/self/status
 ```
@@ -440,7 +440,7 @@ va a poner a prueba el recorte de extensión de `convertir.sh`.
 ### Puntos 27-30: primera ejecución de `convertir.sh`
 
 ```bash
-cd ~/"Lab. Sistemas Operativos/Taller_Procesos_Y_Scripts"
+cd ~/"Lab. Sistemas Operativos/Taller_2_Procesos_Y_Scripts"
 ./convertir.sh prueba_videos
 ls -la prueba_videos
 ```
