@@ -15,6 +15,8 @@ terminación con `waitpid`.
 - `Makefile` — construye `procesos` (`make`) y limpia lo generado
   (`make clean`). No fue publicado con el enunciado esta vez; se
   escribió siguiendo el mismo patrón de los talleres anteriores.
+- `Doxyfile` — configuración de Doxygen para generar la documentación
+  de `procesos.c` a partir de sus comentarios `/** ... */`.
 - `bitacora.md` — documentación de la práctica, con la explicación del
   punto 3 (por qué el código después de un `exec` exitoso no se
   ejecuta).
@@ -27,6 +29,16 @@ make
 make clean
 ```
 
+## Generar la documentación de procesos.c
+
+```bash
+doxygen Doxyfile
+```
+
+Genera `docs/html/index.html`. No se versiona (ver `.gitignore` de la
+raíz del repo): se regenera localmente cuando se necesita.
+
 ## Requisitos
 
 - `gcc`, `make`
+- `doxygen` (solo para generar la documentación de `procesos.c`)
