@@ -3,9 +3,15 @@ programa1
 programa2
 infoproc
 procesos
+planificador
 *.o
 *.exe
 *.out
+obj/
+
+# Archivos intermedios de gnuplot generados por el simulador de planificacion
+# (los .png de los diagramas si se versionan, son parte de la entrega)
+*.gpi
 
 # Videos de prueba generados para el taller de procesos y scripts
 *.mkv
@@ -16,5 +22,4 @@ docs/
 
 # Basura habitual del editor/SO
 *~
-.vscode/
 .DS_Store

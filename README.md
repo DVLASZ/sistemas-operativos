@@ -17,6 +17,10 @@ qué se trata y cómo compilarlo/ejecutarlo.
   lotes.
 - [`Taller_3_Creacion_De_Procesos/`](./Taller_3_Creacion_De_Procesos) —
   taller de creación de procesos: `fork`, `exec` y `waitpid` en C.
+- [`Taller_4_Planificacion_De_Procesos/`](./Taller_4_Planificacion_De_Procesos)
+  — taller de planificación de procesos: FIFO/SJF/RR a mano,
+  `top`/`ps`/`renice` en el sistema real, y un simulador en C++ con
+  FIFO/SJF/RR/SRT y colas de prioridad.
 
 ## Entorno
 
