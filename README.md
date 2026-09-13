@@ -22,6 +22,14 @@ qué se trata y cómo compilarlo/ejecutarlo.
   `top`/`ps`/`renice` en el sistema real, y un simulador en C++ con
   FIFO/SJF/RR/SRT y colas de prioridad.
 
+## Proyectos
+
+- [`Proyecto_1_Planificador/`](./Proyecto_1_Planificador) — proyecto
+  de primer corte: simulador de planificación de procesos con colas de
+  prioridad (FIFO/SJF/RR/SRT), con un caso propio de tres colas para
+  explicar por qué repartir procesos en colas cambia el resultado
+  frente a una sola cola.
+
 ## Entorno
 
 El código de este repositorio está pensado para compilarse en Linux

@@ -1,0 +1,15 @@
+# Comparacion del punto 5: los mismos 6 procesos de caso_propio.txt,
+# pero todos en una sola cola SRT, sin division en colas de prioridad.
+
+define queues 1
+define scheduling 1 srt
+define quantum 1 2
+
+process A 0 4
+process B 2 2
+process C 0 5
+process D 3 3
+process E 0 6
+process F 1 1
+
+start

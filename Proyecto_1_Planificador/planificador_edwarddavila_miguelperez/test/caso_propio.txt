@@ -1,0 +1,29 @@
+# Caso propio (punto 5): 3 colas de prioridad con algoritmos distintos.
+#
+# Cola 1 (la de mayor prioridad): SRT, quantum 3.
+# Cola 2: RR, quantum 2.
+# Cola 3 (la de menor prioridad): FIFO, quantum 10 (mayor que cualquier
+#   rafaga, para que se comporte como FIFO puro sin cortes de quantum).
+#
+# A proposito, en la cola 3 el proceso F (rafaga 1, muy corto) llega
+# justo despues de E (rafaga 6, largo): en FIFO no hay reordenamiento
+# por rafaga, asi que F queda atrapado detras de E sin remedio.
+
+define queues 3
+define scheduling 1 srt
+define scheduling 2 rr
+define scheduling 3 fifo
+define quantum 1 3
+define quantum 2 2
+define quantum 3 10
+
+process A 0 4 1
+process B 2 2 1
+
+process C 0 5 2
+process D 3 3 2
+
+process E 0 6 3
+process F 1 1 3
+
+start
