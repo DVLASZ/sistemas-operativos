@@ -17,11 +17,21 @@ proyecto (el mismo en ambos, según confirma el README del simulador):
 
 ## Parte 1 — en papel
 
-Los cálculos de esta parte se verificaron con el simulador ya corregido
-(`planificador_edwarddavila_miguelperez/`), corriendo exactamente este
-conjunto de procesos con cada algoritmo — de modo que las tablas y
-diagramas de abajo no son solo "a mano", sino confirmados por una
-segunda implementación independiente.
+Los diagramas de FIFO y SJF (punto 1) se resolvieron primero a mano; se
+incluye la foto de ese papel a continuación. El de Round Robin se
+resolvió directamente por computadora con el simulador ya corregido
+(`planificador_edwarddavila_miguelperez/`), igual que el resto de los
+cálculos de esta parte (punto 2 en adelante), que en todos los casos
+están confirmados por esa segunda implementación independiente.
+
+![Diagramas de Gantt de FIFO y SJF, resueltos a mano](diagramas_parte1/1-fifo-sjf-papel.png)
+
+Los mismos dos diagramas, generados por el simulador, para comparar
+contra la versión de papel:
+
+![Diagrama de Gantt de FIFO, generado por computadora](diagramas_parte1/2-fifo-computadora.png)
+
+![Diagrama de Gantt de SJF, generado por computadora](diagramas_parte1/3-sjf-computadora.png)
 
 ### Punto 1 y 2 — FIFO, SJF y Round Robin (quantum 2)
 
@@ -36,8 +46,6 @@ segunda implementación independiente.
 
 Espera promedio: **4.750**. Retorno promedio: **8.750**.
 Secuencia: `P1(7) P2(4) P3(1) P4(4)`.
-
-![Diagrama de Gantt de FIFO](diagramas_parte1/1-fifo.png)
 
 **SJF (no expropiativo)**
 
@@ -57,8 +65,6 @@ llegó en t=2) y P3 (restante 1, llegó en t=4): gana P3 por tener la
 ráfaga más corta. Entre P2 y P4 (ambos con ráfaga 4) decide el orden de
 llegada: P2 llegó primero.
 
-![Diagrama de Gantt de SJF](diagramas_parte1/2-sjf.png)
-
 **Round Robin, quantum = 2**
 
 | Proceso | Llegada | Ráfaga | Espera | Retorno |
@@ -71,7 +77,7 @@ llegada: P2 llegó primero.
 Espera promedio: **5.000**. Retorno promedio: **9.000**.
 Secuencia: `P1(2) P2(2) P1(2) P3(1) P2(2) P4(2) P1(2) P4(2) P1(1)`.
 
-![Diagrama de Gantt de Round Robin, quantum 2](diagramas_parte1/3-rr-quantum2.png)
+![Diagrama de Gantt de Round Robin, quantum 2](diagramas_parte1/4-rr-quantum2.png)
 
 ### Punto 3 — comparación
 
@@ -107,7 +113,7 @@ procesos cortos (inanición) — algo que SJF puro tampoco resuelve.
 Espera promedio: **5.500**. Secuencia:
 `P1 P1 P2 P1 P2 P3 P1 P4 P2 P1 P4 P2 P1 P4 P1 P4` (cada tramo de 1 unidad).
 
-![Diagrama de Gantt de Round Robin, quantum 1](diagramas_parte1/4-rr-quantum1.png)
+![Diagrama de Gantt de Round Robin, quantum 1](diagramas_parte1/5-rr-quantum1.png)
 
 **Quantum = 8**
 
@@ -120,7 +126,7 @@ Espera promedio: **5.500**. Secuencia:
 
 Espera promedio: **4.750**. Secuencia: `P1(7) P2(4) P3(1) P4(4)`.
 
-![Diagrama de Gantt de Round Robin, quantum 8](diagramas_parte1/5-rr-quantum8.png)
+![Diagrama de Gantt de Round Robin, quantum 8](diagramas_parte1/6-rr-quantum8.png)
 
 **A qué se parece cada extremo:**
 
