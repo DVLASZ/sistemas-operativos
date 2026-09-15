@@ -95,7 +95,12 @@ mecanismo y solo diferían en el nombre.
   verificó por separado con un caso sintético (un proceso de ráfaga 10
   y otro de ráfaga 1 llegando en t=1, con quantum 5): sin este bloque
   el proceso largo habría conservado la CPU 5 unidades más; con él, se
-  corta exactamente en t=1.
+  corta exactamente en t=1. Ambas reglas coinciden con lo que confirmó
+  el docente por correo: un proceso recién llegado se inserta según su
+  tiempo restante, que en ese instante es toda su ráfaga, y solo hay
+  expropiación cuando ese restante es **menor** (no igual) al del
+  proceso que tiene la CPU — que es justo la comparación estricta
+  (`<`) que usa el bloque de expropiación.
 
 ### Sobre el desempate
 
@@ -118,6 +123,12 @@ prioridad, cada una con un algoritmo distinto (`test/caso_propio.txt`):
 | 1 (mayor prioridad) | SRT | 3 | A (0, 4), B (2, 2) |
 | 2 | RR | 2 | C (0, 5), D (3, 3) |
 | 3 (menor prioridad) | FIFO | 10 | E (0, 6), F (1, 1) |
+
+Se consultó con el docente si el número de colas y la combinación de
+algoritmos eran las esperadas para este punto, y confirmó que se
+esperan **al menos tres colas, cada una con un algoritmo distinto**
+(por ejemplo RR, SRT y FIFO) — exactamente el planteamiento de este
+caso.
 
 La cola 3 se armó a propósito para exponer un caso extremo: **F**
 (ráfaga 1, casi instantáneo) llega en t=1, justo un instante después de
@@ -199,7 +210,10 @@ prioridad quede completamente bloqueada mientras las de arriba tengan
 algo pendiente, pero sí queda **encerrada dentro de su propio
 algoritmo**: una vez que un proceso entra a una cola, solo compite por
 el turno de esa cola con los demás procesos de esa misma cola, según
-el algoritmo que a esa cola le corresponda. F fue asignado a la cola 3
+el algoritmo que a esa cola le corresponda (el docente confirmó que
+esta lectura es correcta: se debe repartir la CPU entre las colas
+precisamente para evitar que las de menor prioridad caigan en
+inanición). F fue asignado a la cola 3
 (FIFO), y dentro de esa cola compite únicamente contra E — no contra A,
 B, C ni D—, y FIFO no tiene ningún mecanismo para notar que la ráfaga
 de F es mucho menor que la de E. El resultado es que F debe esperar a
