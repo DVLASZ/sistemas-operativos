@@ -22,6 +22,11 @@ qué se trata y cómo compilarlo/ejecutarlo.
   `top`/`ps`/`renice` en el sistema real, y un simulador en C++ con
   FIFO/SJF/RR/SRT y colas de prioridad.
 
+- [`Taller_5_Senales_En_Servidor_Concurrente/`](./Taller_5_Senales_En_Servidor_Concurrente)
+  — taller de señales: `SIGINT`, `SIGALRM` y `sigaction` en un servidor
+  TCP concurrente, contadores compartidos con operaciones atómicas y
+  comprobación de errores con `perror`.
+
 ## Proyectos
 
 - [`Proyecto_1_Planificador/`](./Proyecto_1_Planificador) — proyecto

@@ -4,6 +4,8 @@ programa2
 infoproc
 procesos
 planificador
+servidor_tablero
+cliente_tablero
 *.o
 *.exe
 *.out
@@ -16,6 +18,10 @@ obj/
 # Videos de prueba generados para el taller de procesos y scripts
 *.mkv
 *.mp4
+
+# Salidas que genera carga.sh del taller de senales
+lector_*.txt
+escritor_*.txt
 
 # Documentacion generada por Doxygen (se regenera con `doxygen Doxyfile`)
 docs/
