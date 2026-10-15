@@ -6,6 +6,8 @@ procesos
 planificador
 servidor_tablero
 cliente_tablero
+chat_server
+chat_client
 *.o
 *.exe
 *.out
