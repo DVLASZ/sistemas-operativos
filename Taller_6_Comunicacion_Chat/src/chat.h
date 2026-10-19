@@ -13,5 +13,6 @@
 #define PORT 8080              /**< Puerto TCP del servidor. */
 #define BUFSIZE 512            /**< Capacidad del búfer de texto, incluido el terminador nulo. */
 #define MSGSIZE (BUFSIZE + 64) /**< Capacidad para el texto y el prefijo del servidor. */
+#define NICK_SIZE 32           /**< Capacidad del apodo, incluido el terminador nulo. */
 
 #endif // CHAT_H

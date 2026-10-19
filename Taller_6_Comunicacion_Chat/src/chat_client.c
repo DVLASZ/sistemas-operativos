@@ -60,6 +60,19 @@ int main(int argc, char *argv[]) {
     }
 
     printf("Conectado al chat en %s:%d\n", host, PORT);
+
+    // El apodo es lo primero que se envía: la primera línea que se escribe.
+    printf("Escribe tu apodo: ");
+    fflush(stdout);
+    if (fgets(buf, BUFSIZE, stdin) == NULL) {
+        close(sock_fd);
+        return 0;   // EOF antes de presentarse.
+    }
+    if (send(sock_fd, buf, strlen(buf), MSG_NOSIGNAL) <= 0) {
+        perror("send");
+        close(sock_fd);
+        exit(EXIT_FAILURE);
+    }
     printf("Escribe mensajes (Ctrl-D para salir):\n");
 
     // Recibir en otro hilo mientras el principal atiende el teclado.
@@ -94,8 +107,8 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        // Enviar al servidor la línea escrita.
-        if (send(sock_fd, buf, strlen(buf), 0) <= 0) {
+        // Enviar al servidor la línea escrita (sin SIGPIPE si el servidor ya cerró).
+        if (send(sock_fd, buf, strlen(buf), MSG_NOSIGNAL) <= 0) {
             break;
         }
     }

@@ -26,7 +26,8 @@ typedef struct {
 /** @brief Lista compartida de clientes, protegida mediante exclusión mutua. */
 typedef struct {
     int fds[MAX_CLIENTS];  /**< Descriptores activos; -1 indica una entrada libre. */
-    pthread_mutex_t lock;  /**< Mutex que protege el acceso a la lista. */
+    char nicknames[MAX_CLIENTS][NICK_SIZE]; /**< Apodo de cada cliente, en la misma posición que su descriptor. */
+    pthread_mutex_t lock;  /**< Mutex que protege el acceso a la lista y a los apodos. */
 } client_list_t;
 
 /**
@@ -50,6 +51,35 @@ void client_list_add(int fd);
 void client_list_remove(int fd);
 
 /**
+ * @brief Guarda el apodo de un cliente junto a su descriptor, bajo el mutex.
+ * @param fd Descriptor del cliente registrado.
+ * @param nickname Apodo, terminado en nulo; se trunca a NICK_SIZE - 1 caracteres.
+ * @pre La lista de clientes está inicializada.
+ */
+void client_list_set_nickname(int fd, const char *nickname);
+
+/**
+ * @brief Copia el apodo de un cliente, bajo el mutex.
+ * @param fd Descriptor del cliente registrado.
+ * @param dest Búfer de al menos NICK_SIZE bytes; queda vacío si el descriptor no está registrado.
+ * @pre La lista de clientes está inicializada.
+ */
+void client_list_get_nickname(int fd, char *dest);
+
+/**
+ * @brief Lee una línea terminada en salto de línea, un byte por vez.
+ *
+ * Lee solo hasta el salto de línea, de modo que no consume nada del mensaje siguiente. Si la
+ * línea es más larga que el búfer, guarda el principio y descarta el resto.
+ *
+ * @param fd Descriptor del socket.
+ * @param dest Búfer que recibe la línea, sin el salto de línea ni el retorno de carro.
+ * @param size Capacidad del búfer, incluido el terminador nulo.
+ * @return Cantidad de caracteres guardados, o -1 si el cliente cerró la conexión o hubo un error.
+ */
+int read_line(int fd, char *dest, int size);
+
+/**
  * @brief Difunde un mensaje a los clientes registrados, excepto al emisor.
  *
  * Copia los descriptores bajo el mutex y lo libera antes de enviar.
@@ -61,7 +91,7 @@ void client_list_remove(int fd);
 void broadcast(int sender_fd, const char *msg, int len);
 
 /**
- * @brief Atiende una conexión, difunde sus mensajes y cierra su socket al salir.
+ * @brief Atiende una conexión: lee el apodo, difunde sus mensajes y cierra su socket al salir.
  * @param arg Apuntador a client_conn_t reservado con malloc(); el hilo lo libera.
  * @return NULL cuando termina la conexión.
  * @pre arg contiene una conexión válida cuyo descriptor ya fue registrado.

@@ -102,6 +102,7 @@ void client_list_init(void) {
     int i;
     for (i = 0; i < MAX_CLIENTS; i++) {
         clients.fds[i] = -1;
+        clients.nicknames[i][0] = '\0';
     }
     pthread_mutex_init(&clients.lock, NULL);
 }
@@ -113,6 +114,7 @@ void client_list_add(int fd) {
     for (i = 0; i < MAX_CLIENTS; i++) {
         if (clients.fds[i] == -1) {
             clients.fds[i] = fd;
+            clients.nicknames[i][0] = '\0';   // Aún sin apodo.
             break;
         }
     }
@@ -125,10 +127,57 @@ void client_list_remove(int fd) {
     for (i = 0; i < MAX_CLIENTS; i++) {
         if (clients.fds[i] == fd) {
             clients.fds[i] = -1;
+            clients.nicknames[i][0] = '\0';
             break;
         }
     }
     pthread_mutex_unlock(&clients.lock);
+}
+
+void client_list_set_nickname(int fd, const char *nickname) {
+    int i;
+    // El apodo se escribe bajo el mutex: otros hilos pueden leerlo al mismo tiempo.
+    pthread_mutex_lock(&clients.lock);
+    for (i = 0; i < MAX_CLIENTS; i++) {
+        if (clients.fds[i] == fd) {
+            strncpy(clients.nicknames[i], nickname, NICK_SIZE - 1);
+            clients.nicknames[i][NICK_SIZE - 1] = '\0';
+            break;
+        }
+    }
+    pthread_mutex_unlock(&clients.lock);
+}
+
+void client_list_get_nickname(int fd, char *dest) {
+    int i;
+    dest[0] = '\0';
+    pthread_mutex_lock(&clients.lock);
+    for (i = 0; i < MAX_CLIENTS; i++) {
+        if (clients.fds[i] == fd) {
+            strncpy(dest, clients.nicknames[i], NICK_SIZE - 1);
+            dest[NICK_SIZE - 1] = '\0';
+            break;
+        }
+    }
+    pthread_mutex_unlock(&clients.lock);
+}
+
+int read_line(int fd, char *dest, int size) {
+    int     total = 0;
+    char    c;
+    ssize_t n;
+
+    // Un byte por vez, para no consumir nada más allá del salto de línea.
+    while ((n = recv(fd, &c, 1, 0)) > 0) {
+        if (c == '\n') {
+            dest[total] = '\0';
+            return total;
+        }
+        if (c != '\r' && total < size - 1) {
+            dest[total++] = c;   // Lo que no cabe se descarta.
+        }
+    }
+    return -1;   // El cliente cerró la conexión o hubo un error.
 }
 
 void broadcast(int sender_fd, const char *msg, int len) {
@@ -145,8 +194,10 @@ void broadcast(int sender_fd, const char *msg, int len) {
     pthread_mutex_unlock(&clients.lock);
 
     // Enviar fuera de la sección crítica para no retener el mutex.
+    // MSG_NOSIGNAL: si un cliente ya se fue, send falla con error en lugar de matar
+    // al servidor con SIGPIPE.
     for (i = 0; i < count; i++) {
-        send(snapshot[i], msg, len, 0);
+        send(snapshot[i], msg, len, MSG_NOSIGNAL);
     }
 }
 
@@ -154,33 +205,48 @@ void *client_thread(void *arg) {
     client_conn_t *conn = (client_conn_t *)arg;
     int    fd = conn->fd;
     char   peer[INET_ADDRSTRLEN];
+    char   origin[INET_ADDRSTRLEN + 8];   // Dirección y puerto del cliente: "ip:puerto".
+    char   nick[NICK_SIZE];
     char   buf[BUFSIZE];
     char   msg[MSGSIZE];
     ssize_t n;
 
     inet_ntop(AF_INET, &conn->addr.sin_addr, peer, INET_ADDRSTRLEN);
+    snprintf(origin, sizeof(origin), "%s:%d", peer, ntohs(conn->addr.sin_port));
     // Los datos pertenecen al hilo; ya se copiaron los campos necesarios.
     free(conn);
 
+    // El primer mensaje del cliente es su apodo.
+    if (read_line(fd, nick, NICK_SIZE) < 0) {
+        client_list_remove(fd);   // Se fue sin presentarse.
+        close(fd);
+        return NULL;
+    }
+    if (nick[0] == '\0') {
+        snprintf(nick, NICK_SIZE, "cliente%d", fd);   // Apodo vacío: se le asigna uno.
+    }
+    client_list_set_nickname(fd, nick);
+
     snprintf(msg, MSGSIZE,
-             "[servidor] Cliente %d (%s) se unió al chat\n", fd, peer);
+             "[servidor] %s (%s) se unió al chat\n", nick, peer);
     broadcast(fd, msg, (int)strlen(msg));
-    printf("%s", msg);
+    printf("[servidor] %s (%s) se unió al chat\n", nick, origin);
     fflush(stdout);
 
     // Recibir los mensajes del cliente y difundirlos a los demás hasta que se vaya.
     while ((n = recv(fd, buf, BUFSIZE - 1, 0)) > 0) {
         buf[n] = '\0';
-        printf("[%d] %s", fd, buf);
+        client_list_get_nickname(fd, nick);
+        printf("[%s %s] %s", nick, origin, buf);
         fflush(stdout);
-        snprintf(msg, MSGSIZE, "[%d] %s", fd, buf);
+        snprintf(msg, MSGSIZE, "[%s] %s", nick, buf);
         broadcast(fd, msg, (int)strlen(msg));
     }
 
     snprintf(msg, MSGSIZE,
-             "[servidor] Cliente %d (%s) salió del chat\n", fd, peer);
+             "[servidor] %s (%s) salió del chat\n", nick, peer);
     broadcast(fd, msg, (int)strlen(msg));
-    printf("%s", msg);
+    printf("[servidor] %s (%s) salió del chat\n", nick, origin);
     fflush(stdout);
 
     client_list_remove(fd);
