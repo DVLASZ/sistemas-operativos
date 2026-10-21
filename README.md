@@ -27,6 +27,11 @@ qué se trata y cómo compilarlo/ejecutarlo.
   TCP concurrente, contadores compartidos con operaciones atómicas y
   comprobación de errores con `perror`.
 
+- [`Taller_6_Comunicacion_Chat/`](./Taller_6_Comunicacion_Chat) —
+  taller de comunicación: servidor y cliente de chat sobre sockets TCP
+  con hilos POSIX, mutex para la lista de clientes, `select()` en el
+  cliente y apodos.
+
 ## Proyectos
 
 - [`Proyecto_1_Planificador/`](./Proyecto_1_Planificador) — proyecto
