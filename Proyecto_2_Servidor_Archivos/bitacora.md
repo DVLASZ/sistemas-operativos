@@ -45,3 +45,32 @@ Todavía no probé nada con archivos reales, porque `put` y `get` no están.
 - Commit 5: Doxygen, comentarios, el README.txt, pruebas con varios clientes y archivos grandes, y el zip con `make clean`.
 
 Pendiente de preguntarle al profe si el README de entrega puede ser `.md` o tiene que ser `.txt`.
+
+## 24 de octubre, más tarde
+
+Segundo commit, `put`. Cómo quedó el intercambio: el cliente manda la `request` con el nombre, el servidor revisa el nombre y contesta si autoriza, el cliente manda la información del archivo (nombre, tamaño y modo) y después el contenido, y al final el servidor confirma. Si algo falla a mitad, el servidor avisa y cierra la conexión, porque ya no sé en qué punto quedó el flujo.
+
+Lo hice en `send_file` y `receive_file` de `protocol.c`. Copian en bloques de 64 KB, siempre con `read_all` y `write_all`, y cuentan los bytes hasta llegar exactamente al tamaño anunciado. Si el cliente se va antes de terminar, el servidor borra el archivo que quedó a medias.
+
+Cosas que decidí sobre la marcha:
+
+- Pasé `size` de `int` a `int64_t` en `file_info`. Con `int` no cabían archivos de más de 2 GB. El struct mide 272 bytes por el relleno, así que lo lleno de ceros antes de mandarlo para no enviar basura de la pila.
+- El nombre que llega del cliente no se cree. `valid_filename` rechaza vacío, `.`, `..` y cualquier nombre con `/`. Se revisa dos veces, al recibir la solicitud y otra vez dentro de `receive_file`, porque el segundo nombre viene en otro mensaje.
+- El archivo se abre con `O_NOFOLLOW`, así que un enlace simbólico dentro de `files/` no sirve para escribir fuera.
+- El cliente comprueba que el archivo existe y es regular antes de hablar con el servidor, y manda solo el nombre sin la ruta.
+
+Pruebas en la VM, todo a la primera:
+
+- `make` sin advertencias.
+- Subí un texto, un archivo vacío, uno de 3 MB al azar, uno de 70000 ceros y uno de 50 MB. Los cinco quedaron con el mismo md5 que el original y el mismo tamaño.
+- Un archivo dentro de una subcarpeta llegó sin la ruta.
+- Subir otra vez `texto.txt` con otro contenido lo sobrescribió.
+- Ocho clientes subiendo a la vez archivos de 10 MB: los ocho llegaron iguales.
+- `put` de un archivo que no existe y de una carpeta: el cliente lo rechaza sin molestar al servidor.
+- Con un programa de prueba que arma los mensajes a mano mandé los nombres `../evil`, `/etc/passwd`, `.`, `..`, `a/b` y uno vacío. Todos rechazados y no apareció nada fuera de `files/`.
+- Tamaño declarado negativo, y otro caso que declara 100 bytes y manda 10 y se va: no queda ningún archivo y el servidor sigue atendiendo.
+- Un enlace simbólico en `files/` apuntando a `/tmp/objetivo`: el servidor dijo que no pudo recibir y `/tmp/objetivo` quedó intacto.
+
+No probé qué pasa si se llena el disco, solo está el camino de error en el código. Y sigue pendiente lo de dos clientes mandando el mismo nombre a la vez: hoy el último que termine gana. Eso va en el commit 4 con el sufijo.
+
+Sigue `get`.

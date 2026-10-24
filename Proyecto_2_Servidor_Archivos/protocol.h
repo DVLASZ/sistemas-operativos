@@ -3,6 +3,7 @@
 
 #include <fcntl.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -42,7 +43,7 @@ typedef struct {
 * @brief Informacion de un archivo a transferir
 */
 typedef struct {
-	int size; /**< Tamano del archivo a transferir, -1 si hay error ej. no existe*/
+	int64_t size; /**< Tamano del archivo a transferir, -1 si hay error ej. no existe*/
 	char filename[NAME_MAX]; /**< Nombre del archivo */
 	mode_t mode; /**< Modo */
 }file_info;
@@ -92,8 +93,20 @@ int receive_file(int s, char * destination_folder);
 * @param s Socket a enviar el archivo
 * @param path Ruta al archivo a enviar
 *
-* @return 
+* @return 1 si se envio el archivo completo, 0 si ocurre un error
 */
 int send_file(int s, char * path);
+
+/**
+* @brief Dice si un nombre de archivo se puede usar dentro de la carpeta de archivos
+*
+* Rechaza el nombre vacio, "." y "..", y cualquier nombre con "/", para que un cliente
+* no pueda escribir ni leer fuera de la carpeta.
+*
+* @param name Nombre recibido
+*
+* @return 1 si es valido, 0 si no
+*/
+int valid_filename(const char * name);
 
 #endif

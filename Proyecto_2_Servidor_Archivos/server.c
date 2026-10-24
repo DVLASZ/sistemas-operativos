@@ -89,6 +89,17 @@ void remove_client(client * c);
  */
 unsigned short parse_port(const char * text);
 
+/**
+ * @brief Envia una respuesta al cliente
+ *
+ * @param s Socket del cliente
+ * @param code Codigo de respuesta
+ * @param message Mensaje para el cliente
+ *
+ * @return 1 si se envio completa, 0 si ocurre un error
+ */
+int reply(int s, response_code code, const char * message);
+
 int main(int argc, char * argv[]) {
 	int s, c; // Conectores
 	int opt = 1; // Valor para SO_REUSEADDR
@@ -268,7 +279,7 @@ void remove_client(client * c) {
 void * client_thread(void * arg) {
 	client * c = (client *)arg;
 	request req; // Solicitud del cliente
-	response res; // Respuesta del servidor
+	char msg[256]; // Mensaje de error para el cliente
 
 	//Leer solicitudes de tamaño fijo hasta que el cliente cierre o envie exit
 	while (read_all(c->socket, &req, sizeof(req)) == (ssize_t)sizeof(req)) {
@@ -281,21 +292,53 @@ void * client_thread(void * arg) {
 			break;
 		}
 
-		memset(&res, 0, sizeof(res));
-		res.code = TRANSFER_DENIED;
-		if (equals(req.operation, "put") || equals(req.operation, "get")) {
-			snprintf(res.message, sizeof(res.message),
-				"'%s' todavia no esta implementado en el servidor", req.operation);
-		} else {
-			snprintf(res.message, sizeof(res.message),
-				"Comando desconocido: %.100s", req.operation);
+		if (equals(req.operation, "put")) {
+			//el nombre se revisa antes de aceptar el archivo
+			if (!valid_filename(req.filename)) {
+				if (!reply(c->socket, TRANSFER_DENIED, "nombre de archivo no valido")) {
+					break;
+				}
+				continue;
+			}
+			if (!reply(c->socket, TRANSFER_AUTHORIZED, "listo para recibir")) {
+				break;
+			}
+			//ahora el cliente manda la informacion del archivo y su contenido
+			if (!receive_file(c->socket, files_dir)) {
+				//no se sabe en que punto quedo el flujo: se avisa y se cierra
+				reply(c->socket, TRANSFER_DENIED, "no se pudo recibir el archivo");
+				break;
+			}
+			printf("Cliente %s:%d: recibido %s\n", c->ip, ntohs(c->address.sin_port), req.filename);
+			if (!reply(c->socket, TRANSFER_AUTHORIZED, "archivo recibido")) {
+				break;
+			}
+			continue;
 		}
 
-		if (write_all(c->socket, &res, sizeof(res)) != (ssize_t)sizeof(res)) {
+		if (equals(req.operation, "get")) {
+			if (!reply(c->socket, TRANSFER_DENIED, "'get' todavia no esta hecho")) {
+				break;
+			}
+			continue;
+		}
+
+		snprintf(msg, sizeof(msg), "comando desconocido: %.100s", req.operation);
+		if (!reply(c->socket, TRANSFER_DENIED, msg)) {
 			break;
 		}
 	}
 
 	remove_client(c);
 	return NULL;
+}
+
+int reply(int s, response_code code, const char * message) {
+	response res;
+
+	memset(&res, 0, sizeof(res));
+	res.code = code;
+	snprintf(res.message, sizeof(res.message), "%s", message);
+
+	return write_all(s, &res, sizeof(res)) == (ssize_t)sizeof(res);
 }

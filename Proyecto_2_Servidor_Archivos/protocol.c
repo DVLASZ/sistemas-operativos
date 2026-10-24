@@ -2,7 +2,6 @@
 #include <fcntl.h>
 #include <libgen.h>
 #include <limits.h>
-#include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,28 +11,104 @@
 
 #include "protocol.h"
 
-int receive_file(int s, char * destination_folder) {
+/* tamano del bloque con el que se copia el contenido */
+#define BLOCK 65536
 
-	//TODO (siguiente commit)
-	(void)s;
-	(void)destination_folder;
-	//1. Leer la informacion del archivo del socket
-	//   En la informacion enviada por el otro extremo se tiene el nombre del archivo
-	//2. Revisar la existencia y permisos sobre el directorio donde se desea recibir el archivo
-	//3. Leer el contenido del socket y guardarlo al archivo local (open-read-write-close)
-	return 0;
+int valid_filename(const char * name) {
+	if (name[0] == '\0' || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+		return 0;
+	}
+	return strchr(name, '/') == NULL;
+}
+
+int receive_file(int s, char * destination_folder) {
+	file_info info;
+	char path[PATH_MAX];
+	char buf[BLOCK];
+	int64_t left;
+	size_t n;
+	int fd;
+
+	//1. la informacion del archivo llega primero
+	if (read_all(s, &info, sizeof(info)) != (ssize_t)sizeof(info)) {
+		return 0;
+	}
+	info.filename[sizeof(info.filename) - 1] = '\0';
+
+	//2. el nombre y el tamano vienen del otro extremo, no se confia en ellos
+	if (info.size < 0 || !valid_filename(info.filename)) {
+		return 0;
+	}
+	if (snprintf(path, sizeof(path), "%s/%s", destination_folder, info.filename) >= (int)sizeof(path)) {
+		return 0;
+	}
+
+	//3. crear el archivo (nuevo o existente) y copiar exactamente size bytes
+	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
+	if (fd == -1) {
+		return 0;
+	}
+
+	for (left = info.size; left > 0; left -= n) {
+		n = left < BLOCK ? (size_t)left : BLOCK;
+		if (read_all(s, buf, n) != (ssize_t)n || write_all(fd, buf, n) != (ssize_t)n) {
+			//el cliente se fue a medias o el disco fallo: no dejar el archivo partido
+			close(fd);
+			unlink(path);
+			return 0;
+		}
+	}
+
+	return close(fd) == 0;
 }
 
 int send_file(int s, char * path) {
-	//TODO (siguiente commit)
-	(void)s;
-	(void)path;
-	//1. Verificar si la ruta corresponde a un archivo regular valido
-	//2. Enviar un mensaje con la informacion del archivo a transferir
-	//   El otro extremo necesita conocer al menos el nombre del archivo y su tamaño
-	//3. Enviar el contenido del archivo, exactamente la cantidad de bytes reportadas
-	
-	return 0;
+	struct stat st;
+	file_info info;
+	char buf[BLOCK];
+	char * copy;
+	int64_t left;
+	ssize_t n;
+	int fd;
+
+	//1. tiene que ser un archivo regular
+	if (stat(path, &st) == -1 || !S_ISREG(st.st_mode)) {
+		return 0;
+	}
+	fd = open(path, O_RDONLY);
+	if (fd == -1) {
+		return 0;
+	}
+
+	//2. informacion del archivo: nombre sin la ruta, tamano y modo
+	copy = strdup(path);
+	if (copy == NULL) {
+		close(fd);
+		return 0;
+	}
+	memset(&info, 0, sizeof(info));
+	info.size = st.st_size;
+	info.mode = st.st_mode;
+	strncpy(info.filename, basename(copy), sizeof(info.filename) - 1);
+	free(copy);
+
+	if (write_all(s, &info, sizeof(info)) != (ssize_t)sizeof(info)) {
+		close(fd);
+		return 0;
+	}
+
+	//3. el contenido, exactamente size bytes. si el archivo cambia de tamano a mitad
+	//   se corta, porque el otro extremo ya espera la cantidad anunciada
+	for (left = info.size; left > 0; left -= n) {
+		n = read(fd, buf, left < BLOCK ? (size_t)left : BLOCK);
+		if (n <= 0 || write_all(s, buf, n) != n) {
+			close(fd);
+			return 0;
+		}
+	}
+
+	close(fd);
+	return 1;
 }
 
 ssize_t read_all(int fd, void * buf, size_t count) {
@@ -70,6 +145,9 @@ ssize_t write_all(int fd, const void * buf, size_t count) {
 				continue;
 			}
 			return -1;
+		}
+		if (n == 0) {
+			return -1; //no avanza: evitar un ciclo infinito
 		}
 		total += n;
 	}

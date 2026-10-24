@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netinet/ip.h>
 #include <unistd.h>
 
@@ -57,6 +58,8 @@ int main(int argc, char * argv[]) {
 	struct sockaddr_in * addr; //Direccion IPv4 del socket del servidor
 	split_list * cmd; // Linea dividida en palabras
 	response res; // Respuesta del servidor
+	struct stat st; // Datos del archivo local
+	char * name; // Nombre del archivo sin la ruta
 
 	if (argc > 3) {
 		fprintf(stderr, "Uso: %s [ip] [puerto]\n", argv[0]);
@@ -154,8 +157,14 @@ int main(int argc, char * argv[]) {
 				printf("Uso: %s ARCHIVO\n", cmd->parts[0]);
 			} else if (strlen(cmd->parts[1]) >= NAME_MAX) {
 				printf("El nombre del archivo es demasiado largo\n");
+			} else if (equals(cmd->parts[0], "put") && !(stat(cmd->parts[1], &st) == 0 && S_ISREG(st.st_mode))) {
+				printf("%s no existe o no es un archivo\n", cmd->parts[1]);
 			} else {
-				if (!send_request(s, cmd->parts[0], cmd->parts[1]) ||
+				//al servidor le llega solo el nombre, sin la ruta
+				name = strrchr(cmd->parts[1], '/');
+				name = (name == NULL) ? cmd->parts[1] : name + 1;
+
+				if (!send_request(s, cmd->parts[0], name) ||
 					read_all(s, &res, sizeof(res)) != (ssize_t)sizeof(res)) {
 					printf("Se perdio la conexion con el servidor\n");
 					free_split_list(cmd);
@@ -163,6 +172,18 @@ int main(int argc, char * argv[]) {
 				}
 				res.message[sizeof(res.message) - 1] = '\0';
 				printf("Servidor: %s\n", res.message);
+
+				//si autorizo el put, se manda el archivo y se espera la confirmacion
+				if (equals(cmd->parts[0], "put") && res.code == TRANSFER_AUTHORIZED) {
+					if (!send_file(s, cmd->parts[1]) ||
+						read_all(s, &res, sizeof(res)) != (ssize_t)sizeof(res)) {
+						printf("Fallo el envio, se cierra la conexion\n");
+						free_split_list(cmd);
+						break;
+					}
+					res.message[sizeof(res.message) - 1] = '\0';
+					printf("Servidor: %s\n", res.message);
+				}
 			}
 		} else {
 			printf("Comando desconocido. Use: put ARCHIVO | get ARCHIVO | exit\n");
