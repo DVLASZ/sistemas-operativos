@@ -31,3 +31,9 @@ docs/
 # Basura habitual del editor/SO
 *~
 .DS_Store
+
+# Proyecto 2 (servidor de archivos): binarios y carpetas que crean los programas al ejecutarse
+Proyecto_2_Servidor_Archivos/server
+Proyecto_2_Servidor_Archivos/client
+Proyecto_2_Servidor_Archivos/files/
+Proyecto_2_Servidor_Archivos/client_files/
