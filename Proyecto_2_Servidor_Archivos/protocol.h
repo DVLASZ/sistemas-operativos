@@ -83,7 +83,7 @@ ssize_t write_all(int fd, const void * buf, size_t count);
 * @param s Socket
 * @param destination_folder Carpeta en la cual se almacenara el archivo
 *
-* @return 1 en caso de exito, 0 si ocurre un error
+* @return 1 si recibio el archivo, 0 si ocurre un error, -1 si el otro extremo avisa que no existe
 */
 int receive_file(int s, char * destination_folder);
 
@@ -108,5 +108,15 @@ int send_file(int s, char * path);
 * @return 1 si es valido, 0 si no
 */
 int valid_filename(const char * name);
+
+/**
+* @brief Avisa que el archivo pedido no existe: manda un file_info con size -1 y nada mas
+*
+* @param s Socket
+* @param name Nombre que se pidio
+*
+* @return 1 si se envio, 0 si ocurre un error
+*/
+int send_not_found(int s, const char * name);
 
 #endif

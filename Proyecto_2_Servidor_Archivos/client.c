@@ -46,6 +46,37 @@ int send_request(int s, const char * operation, const char * filename);
  */
 int count_words(const char * line);
 
+/**
+ * @brief Lee una linea del teclado
+ *
+ * @param line Buffer que recibe la linea
+ * @param size Capacidad del buffer
+ *
+ * @return 1 si leyo una linea, 0 si se acabo la entrada, -1 si la linea no cabia (se descarta)
+ */
+int read_line(char * line, size_t size);
+
+/**
+ * @brief Sube un archivo al servidor
+ *
+ * @param s Socket conectado al servidor
+ * @param path Ruta del archivo local
+ *
+ * @return 1 si la conexion sigue util, 0 si se perdio
+ */
+int do_put(int s, const char * path);
+
+/**
+ * @brief Baja un archivo del servidor a la carpeta client_files
+ *
+ * @param s Socket conectado al servidor
+ * @param client_dir Carpeta donde se guarda
+ * @param name Nombre del archivo en el servidor
+ *
+ * @return 1 si la conexion sigue util, 0 si se perdio
+ */
+int do_get(int s, const char * client_dir, const char * name);
+
 int main(int argc, char * argv[]) {
 	int s; // Conector
 	const char * host = "127.0.0.1"; // Servidor por defecto: esta misma maquina
@@ -57,9 +88,8 @@ int main(int argc, char * argv[]) {
 	char line[PATH_MAX + 32]; // Linea escrita por el usuario
 	struct sockaddr_in * addr; //Direccion IPv4 del socket del servidor
 	split_list * cmd; // Linea dividida en palabras
-	response res; // Respuesta del servidor
-	struct stat st; // Datos del archivo local
-	char * name; // Nombre del archivo sin la ruta
+	int alive; // 0 si se perdio la conexion con el servidor
+	int got; // Resultado de leer una linea
 
 	if (argc > 3) {
 		fprintf(stderr, "Uso: %s [ip] [puerto]\n", argv[0]);
@@ -124,9 +154,14 @@ int main(int argc, char * argv[]) {
 		fflush(stdout);
 
 		//Ctrl-D (fin de entrada) equivale a exit
-		if (fgets(line, sizeof(line), stdin) == NULL) {
+		got = read_line(line, sizeof(line));
+		if (got == 0) {
 			send_request(s, "exit", "");
 			break;
+		}
+		if (got < 0) {
+			printf("La linea es demasiado larga\n");
+			continue;
 		}
 
 		//split() guarda hasta MAX_PARTS palabras: una linea con mas se rechaza antes
@@ -157,33 +192,14 @@ int main(int argc, char * argv[]) {
 				printf("Uso: %s ARCHIVO\n", cmd->parts[0]);
 			} else if (strlen(cmd->parts[1]) >= NAME_MAX) {
 				printf("El nombre del archivo es demasiado largo\n");
-			} else if (equals(cmd->parts[0], "put") && !(stat(cmd->parts[1], &st) == 0 && S_ISREG(st.st_mode))) {
-				printf("%s no existe o no es un archivo\n", cmd->parts[1]);
+			} else if (equals(cmd->parts[0], "put")) {
+				alive = do_put(s, cmd->parts[1]);
 			} else {
-				//al servidor le llega solo el nombre, sin la ruta
-				name = strrchr(cmd->parts[1], '/');
-				name = (name == NULL) ? cmd->parts[1] : name + 1;
-
-				if (!send_request(s, cmd->parts[0], name) ||
-					read_all(s, &res, sizeof(res)) != (ssize_t)sizeof(res)) {
-					printf("Se perdio la conexion con el servidor\n");
-					free_split_list(cmd);
-					break;
-				}
-				res.message[sizeof(res.message) - 1] = '\0';
-				printf("Servidor: %s\n", res.message);
-
-				//si autorizo el put, se manda el archivo y se espera la confirmacion
-				if (equals(cmd->parts[0], "put") && res.code == TRANSFER_AUTHORIZED) {
-					if (!send_file(s, cmd->parts[1]) ||
-						read_all(s, &res, sizeof(res)) != (ssize_t)sizeof(res)) {
-						printf("Fallo el envio, se cierra la conexion\n");
-						free_split_list(cmd);
-						break;
-					}
-					res.message[sizeof(res.message) - 1] = '\0';
-					printf("Servidor: %s\n", res.message);
-				}
+				alive = do_get(s, client_dir, cmd->parts[1]);
+			}
+			if (!alive) {
+				free_split_list(cmd);
+				break;
 			}
 		} else {
 			printf("Comando desconocido. Use: put ARCHIVO | get ARCHIVO | exit\n");
@@ -223,4 +239,73 @@ int count_words(const char * line) {
 	}
 
 	return count;
+}
+
+int read_line(char * line, size_t size) {
+	int c;
+
+	if (fgets(line, size, stdin) == NULL) {
+		return 0;
+	}
+	if (strchr(line, '\n') != NULL || feof(stdin)) {
+		return 1;
+	}
+
+	//no cupo la linea entera: se descarta lo que falta para que no se lea como otro comando
+	while ((c = getchar()) != '\n' && c != EOF);
+	return -1;
+}
+
+int do_put(int s, const char * path) {
+	struct stat st;
+	const char * name;
+	response res;
+
+	if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
+		printf("%s no existe o no es un archivo\n", path);
+		return 1;
+	}
+
+	//al servidor le llega solo el nombre, sin la ruta
+	name = strrchr(path, '/');
+	name = (name == NULL) ? path : name + 1;
+
+	if (!send_request(s, "put", name) || read_all(s, &res, sizeof(res)) != (ssize_t)sizeof(res)) {
+		printf("Se perdio la conexion con el servidor\n");
+		return 0;
+	}
+	res.message[sizeof(res.message) - 1] = '\0';
+	printf("Servidor: %s\n", res.message);
+	if (res.code != TRANSFER_AUTHORIZED) {
+		return 1;
+	}
+
+	//autorizado: se manda el archivo y se espera la confirmacion
+	if (!send_file(s, (char *)path) || read_all(s, &res, sizeof(res)) != (ssize_t)sizeof(res)) {
+		printf("Fallo el envio, se cierra la conexion\n");
+		return 0;
+	}
+	res.message[sizeof(res.message) - 1] = '\0';
+	printf("Servidor: %s\n", res.message);
+	return 1;
+}
+
+int do_get(int s, const char * client_dir, const char * name) {
+	int r;
+
+	if (!send_request(s, "get", name)) {
+		printf("Se perdio la conexion con el servidor\n");
+		return 0;
+	}
+
+	r = receive_file(s, (char *)client_dir);
+	if (r == 1) {
+		printf("Servidor: archivo guardado en client_files/%s\n", name);
+	} else if (r == -1) {
+		printf("Servidor: el archivo %s no existe\n", name);
+	} else {
+		printf("Fallo la descarga, se cierra la conexion\n");
+		return 0;
+	}
+	return 1;
 }

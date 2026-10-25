@@ -35,6 +35,11 @@ int receive_file(int s, char * destination_folder) {
 	}
 	info.filename[sizeof(info.filename) - 1] = '\0';
 
+	//el otro extremo avisa que el archivo no existe: size -1 y no sigue nada
+	if (info.size == -1) {
+		return -1;
+	}
+
 	//2. el nombre y el tamano vienen del otro extremo, no se confia en ellos
 	if (info.size < 0 || !valid_filename(info.filename)) {
 		return 0;
@@ -153,4 +158,14 @@ ssize_t write_all(int fd, const void * buf, size_t count) {
 	}
 
 	return total;
+}
+
+int send_not_found(int s, const char * name) {
+	file_info info;
+
+	memset(&info, 0, sizeof(info));
+	info.size = -1;
+	strncpy(info.filename, name, sizeof(info.filename) - 1);
+
+	return write_all(s, &info, sizeof(info)) == (ssize_t)sizeof(info);
 }

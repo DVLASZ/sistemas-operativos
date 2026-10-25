@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netinet/ip.h>
 #include <unistd.h>
 
@@ -280,6 +281,8 @@ void * client_thread(void * arg) {
 	client * c = (client *)arg;
 	request req; // Solicitud del cliente
 	char msg[256]; // Mensaje de error para el cliente
+	char path[PATH_MAX]; // Ruta del archivo pedido con get
+	struct stat st; // Datos del archivo pedido
 
 	//Leer solicitudes de tamaño fijo hasta que el cliente cierre o envie exit
 	while (read_all(c->socket, &req, sizeof(req)) == (ssize_t)sizeof(req)) {
@@ -304,7 +307,7 @@ void * client_thread(void * arg) {
 				break;
 			}
 			//ahora el cliente manda la informacion del archivo y su contenido
-			if (!receive_file(c->socket, files_dir)) {
+			if (receive_file(c->socket, files_dir) != 1) {
 				//no se sabe en que punto quedo el flujo: se avisa y se cierra
 				reply(c->socket, TRANSFER_DENIED, "no se pudo recibir el archivo");
 				break;
@@ -317,9 +320,19 @@ void * client_thread(void * arg) {
 		}
 
 		if (equals(req.operation, "get")) {
-			if (!reply(c->socket, TRANSFER_DENIED, "'get' todavia no esta hecho")) {
-				break;
+			//si el nombre no sirve o el archivo no existe (o es un enlace), se avisa con size -1
+			if (!valid_filename(req.filename) ||
+				snprintf(path, sizeof(path), "%s/%s", files_dir, req.filename) >= (int)sizeof(path) ||
+				lstat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
+				if (!send_not_found(c->socket, req.filename)) {
+					break;
+				}
+				continue;
 			}
+			if (!send_file(c->socket, path)) {
+				break; //el cliente ya espera el contenido: no hay forma de seguir
+			}
+			printf("Cliente %s:%d: enviado %s\n", c->ip, ntohs(c->address.sin_port), req.filename);
 			continue;
 		}
 

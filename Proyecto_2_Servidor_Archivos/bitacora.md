@@ -74,3 +74,24 @@ Pruebas en la VM, todo a la primera:
 No probé qué pasa si se llena el disco, solo está el camino de error en el código. Y sigue pendiente lo de dos clientes mandando el mismo nombre a la vez: hoy el último que termine gana. Eso va en el commit 4 con el sufijo.
 
 Sigue `get`.
+
+## 25 de octubre, tercer commit
+
+Hice `get`. El cliente manda la solicitud con el nombre, y el servidor contesta directamente con la información del archivo y el contenido, igual que en `put` pero al revés. Si el archivo no existe manda la información con tamaño -1 y nada más, como dice el PDF. Para eso `receive_file` ahora devuelve 1 si recibió, 0 si falló y -1 si el otro lado avisó que no existe, y agregué `send_not_found`. Así el cliente usa la misma `receive_file` que el servidor para el `put`.
+
+Casi se me pasa algo: al cambiar lo que devuelve `receive_file`, el `if (!receive_file(...))` del servidor ya no servía, porque -1 cuenta como verdadero. Lo cambié a `!= 1` antes de probar.
+
+En el servidor el archivo se revisa con `lstat` y no con `stat`, para que un enlace simbólico dentro de `files/` no se pueda usar para bajar cosas de otro lado. El nombre pasa por `valid_filename`, igual que en `put`.
+
+En el cliente saqué `put` y `get` a dos funciones, `do_put` y `do_get`, porque el bucle principal se estaba haciendo largo. También arreglé lo de las líneas largas: si no cabe la línea, se avisa y se descarta lo que sobra para que no se lea como otro comando.
+
+Pruebas en la VM, todo bien a la primera:
+
+- Subí con un cliente cinco archivos (texto, vacío, 3 MB, 70000 ceros y 50 MB) y los bajé con otro cliente distinto, con su propio `client_files`. Los cinco tienen el mismo md5 y tamaño.
+- `get` de un archivo que no existe, de `../datos/texto.txt`, de `a/b` y de `.`: el cliente dice que no existe y no se crea nada.
+- Una carpeta y un enlace simbólico dentro de `files/`: tampoco se bajan.
+- Una línea de 5000 caracteres: el cliente avisa y el comando que sigue funciona normal.
+- Ocho clientes bajando a la vez el mismo archivo de 3 MB: los ocho iguales.
+- Subir un `texto.txt` nuevo y bajarlo enseguida devuelve la versión nueva.
+
+Lo que falta es lo más delicado: SIGINT y SIGTERM, el sufijo para nombres repetidos y qué pasa si alguien se queda colgado a mitad de una subida.
