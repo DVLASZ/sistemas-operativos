@@ -2,6 +2,7 @@
 #
 # make          compila el servidor (server) y el cliente (client)
 # make clean    elimina lo generado
+# make doc      genera la documentacion con Doxygen en docs/html
 
 CC      = gcc
 CFLAGS  = -std=gnu11 -Wall -Wextra -g
@@ -23,7 +24,10 @@ client: client.o fsutil.o util.o netutil.o protocol.o split.o
 # sin tocarlas; sus advertencias originales se silencian solo en estos objetos.
 util.o netutil.o split.o: CFLAGS += -w
 
+doc:
+	doxygen Doxyfile
+
 clean:
 	rm -f *.o server client
 
-.PHONY: all clean
+.PHONY: all clean doc

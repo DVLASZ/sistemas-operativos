@@ -1,3 +1,11 @@
+/**
+ * @file
+ * @brief Mensajes entre cliente y servidor y copia de archivos por el socket
+ * @author Erwin Meza Vega <emezav@unicauca.edu.co>
+ * @author Edward Esteban Dávila Salazar
+ * @author Miguel Angel Perez Mera
+ */
+
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 

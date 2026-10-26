@@ -124,3 +124,22 @@ Pruebas en la VM:
 Un error mío en las pruebas: probé a un cliente desde una carpeta que no tenía el ejecutable, y la salida salió vacía. No era un bug del programa.
 
 Sin probar: señales con muchos clientes subiendo al mismo tiempo, y qué pasa si el disco se llena a mitad de una subida. Falta el último commit: Doxygen, comentarios, el README.txt para el zip y una pasada final.
+
+## 26 de octubre, quinto commit
+
+Para cerrar pasé el código por sanitizadores, y después hice la documentación.
+
+Corrí el servidor y seis clientes con AddressSanitizer y UBSan, y otra vez con ThreadSanitizer, con una carga mezclada: cada cliente hacía varios `put` de archivos grandes con los mismos nombres (así se cruzaban las reservas con sufijo), `get` de lo que acababa de subir, un `get` que no existe, un `put` de algo inexistente, una palabra suelta, una línea vacía y un `get ../x`. Al final, con un cliente conectado y quieto, mandé SIGTERM al servidor. Los dos sanitizadores salieron sin ningún aviso, ni del servidor ni de los clientes. Quedaron `a.bin` más cinco con sufijo, `b.bin` más tres, `c.txt` más cuatro o cinco, y ningún `.part`.
+
+Lo que no cubre eso: los sanitizadores solo ven lo que la carga alcanza a ejecutar. No probé disco lleno y no probé más de seis clientes con ellos puestos.
+
+Documentación: agregué `Doxyfile` y `make doc`. Doxygen sale sin advertencias. Las funciones propias ya traían su comentario Doxygen en los prototipos, y le puse el encabezado `@file` a `protocol.h` y `protocol.c`. No toqué los archivos del profe, que siguen idénticos al zip.
+
+Lo que quedó como está y vale saberlo:
+
+- Si se llenan los 256 lugares con conexiones quietas, nadie más entra. Un cliente que solo se queda conectado no se corta, porque el PDF no dice nada de eso. El límite de espera de 30 segundos es solo para subidas.
+- El servidor escucha en todas las interfaces y no pide ninguna clave.
+- `split` del profe sigue sin controlar el límite de palabras. El cliente lo cubre rechazando antes la línea.
+- El tamaño anunciado en una subida no se limita. Si alguien declara varios GB, el servidor empieza a escribir hasta que se acabe el disco o el cliente deje de mandar.
+
+El zip para el profe lleva los `.c`, los `.h`, el `Makefile` y un `README.txt` con los nombres, códigos y correos. La bitácora y el `Doxyfile` quedan solo en el repositorio.

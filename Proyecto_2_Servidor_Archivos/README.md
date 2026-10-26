@@ -20,3 +20,5 @@ Correr, cada uno en su terminal:
 En el cliente se escribe `put ARCHIVO`, `get ARCHIVO` o `exit`. Ctrl-D es lo mismo que `exit`, y Ctrl-C o SIGTERM cierran el cliente y el servidor sin dejar archivos a medias. Lo que se sube queda en `files/`, junto al `server`, y lo que se baja queda en `client_files/`, junto al `client`.
 
 `split`, `util` y `netutil` son del profesor y no se tocaron. El avance día a día está en `bitacora.md`.
+
+La documentación con Doxygen se genera con `make doc` y queda en `docs/html/index.html`.

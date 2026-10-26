@@ -1,3 +1,11 @@
+/**
+ * @file
+ * @brief Implementacion del protocolo: put, get y lectura y escritura de bytes exactos
+ * @author Erwin Meza Vega <emezav@unicauca.edu.co>
+ * @author Edward Esteban Dávila Salazar
+ * @author Miguel Angel Perez Mera
+ */
+
 #include <errno.h>
 #include <fcntl.h>
 #include <libgen.h>
