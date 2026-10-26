@@ -3,6 +3,7 @@
 
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,6 +67,12 @@ typedef struct {
 ssize_t read_all(int fd, void * buf, size_t count);
 
 /**
+* @brief Se pone en 1 desde un manejador de senal para que read_all y write_all dejen de
+* reintentar cuando una senal los interrumpe
+*/
+extern volatile sig_atomic_t protocol_abort;
+
+/**
 * @brief Escribe exactamente count bytes en un descriptor, repitiendo write() si escribe menos
 *
 * @param fd Descriptor (socket o archivo)
@@ -82,10 +89,11 @@ ssize_t write_all(int fd, const void * buf, size_t count);
 *
 * @param s Socket
 * @param destination_folder Carpeta en la cual se almacenara el archivo
+* @param store_as Nombre con el que se guarda, o NULL para usar el que manda el otro extremo
 *
 * @return 1 si recibio el archivo, 0 si ocurre un error, -1 si el otro extremo avisa que no existe
 */
-int receive_file(int s, char * destination_folder);
+int receive_file(int s, char * destination_folder, const char * store_as);
 
 /**
 * @brief Envia un archivo a un socket
@@ -100,7 +108,8 @@ int send_file(int s, char * path);
 /**
 * @brief Dice si un nombre de archivo se puede usar dentro de la carpeta de archivos
 *
-* Rechaza el nombre vacio, "." y "..", y cualquier nombre con "/", para que un cliente
+* Rechaza el nombre vacio, los que empiezan por "." (incluidos "." y ".."), y cualquier
+* nombre con "/", para que un cliente
 * no pueda escribir ni leer fuera de la carpeta.
 *
 * @param name Nombre recibido

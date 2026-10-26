@@ -37,6 +37,9 @@
  */
 int send_request(int s, const char * operation, const char * filename);
 
+/** @brief Indica que se recibio SIGINT o SIGTERM */
+static volatile sig_atomic_t interrupted = 0;
+
 /**
  * @brief Cuenta las palabras de una linea, separadas por espacios, tabuladores o saltos de linea
  *
@@ -45,6 +48,15 @@ int send_request(int s, const char * operation, const char * filename);
  * @return Cantidad de palabras
  */
 int count_words(const char * line);
+
+/**
+ * @brief Manejador de SIGINT y SIGTERM: marca que hay que terminar
+ *
+ * Tambien activa protocol_abort, para que una lectura o escritura interrumpida no se reintente.
+ *
+ * @param sig Numero de la senal
+ */
+void on_signal(int sig);
 
 /**
  * @brief Lee una linea del teclado
@@ -90,6 +102,7 @@ int main(int argc, char * argv[]) {
 	split_list * cmd; // Linea dividida en palabras
 	int alive; // 0 si se perdio la conexion con el servidor
 	int got; // Resultado de leer una linea
+	struct sigaction sa; // Manejador de SIGINT y SIGTERM
 
 	if (argc > 3) {
 		fprintf(stderr, "Uso: %s [ip] [puerto]\n", argv[0]);
@@ -105,6 +118,15 @@ int main(int argc, char * argv[]) {
 			exit(EXIT_FAILURE);
 		}
 		port = (unsigned short)value;
+	}
+
+	//SIGINT y SIGTERM terminan el cliente. Sin SA_RESTART, fgets y read se interrumpen
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = on_signal;
+	sigemptyset(&sa.sa_mask);
+	if (sigaction(SIGINT, &sa, NULL) == -1 || sigaction(SIGTERM, &sa, NULL) == -1) {
+		perror("sigaction");
+		exit(EXIT_FAILURE);
 	}
 
 	//Un servidor que cierra de golpe no debe terminar el cliente (SIGPIPE)
@@ -208,6 +230,10 @@ int main(int argc, char * argv[]) {
 		free_split_list(cmd);
 	}
 
+	if (interrupted) {
+		printf("\nInterrumpido\n");
+	}
+
 	// 4. Cerrar la conexion con el servidor
 	printf("Cerrando conexion...\n");
 	close(s);
@@ -298,7 +324,7 @@ int do_get(int s, const char * client_dir, const char * name) {
 		return 0;
 	}
 
-	r = receive_file(s, (char *)client_dir);
+	r = receive_file(s, (char *)client_dir, NULL);
 	if (r == 1) {
 		printf("Servidor: archivo guardado en client_files/%s\n", name);
 	} else if (r == -1) {
@@ -308,4 +334,10 @@ int do_get(int s, const char * client_dir, const char * name) {
 		return 0;
 	}
 	return 1;
+}
+
+void on_signal(int sig) {
+	(void)sig;
+	interrupted = 1;
+	protocol_abort = 1;
 }

@@ -10,14 +10,19 @@
 * @author Miguel Angel Perez Mera
 * @copyright MIT License
 */
+#define _GNU_SOURCE //para ppoll
 #include <arpa/inet.h>
+#include <errno.h>
 #include <limits.h>
+#include <poll.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/stat.h>
 #include <netinet/ip.h>
 #include <unistd.h>
@@ -52,8 +57,23 @@ static pthread_mutex_t clients_lock = PTHREAD_MUTEX_INITIALIZER;
 /** @brief Carpeta donde se almacenan los archivos recibidos */
 static char files_dir[PATH_MAX];
 
+/** @brief Segundos que se espera un dato durante una subida antes de abandonar al cliente */
+#define TRANSFER_TIMEOUT 30
+
+/** @brief Segundos que se espera, al cerrar, a que terminen los hilos de los clientes */
+#define SHUTDOWN_WAIT 5
+
+/** @brief Se avisa cuando ya no queda ningun cliente */
+static pthread_cond_t clients_empty = PTHREAD_COND_INITIALIZER;
+
+/** @brief Nombres que se estan recibiendo en este momento (uno por cliente como maximo) */
+static char busy[MAXCLIENTS][NAME_MAX];
+
+/** @brief Mutex que protege la tabla de nombres en uso */
+static pthread_mutex_t busy_lock = PTHREAD_MUTEX_INITIALIZER;
+
 /** @brief Indica que el servidor debe terminar */
-static volatile int finished = 0;
+static volatile sig_atomic_t finished = 0;
 
 /**
  * @brief Hilo de cliente: atiende los comandos de un cliente hasta que se desconecta.
@@ -91,6 +111,43 @@ void remove_client(client * c);
 unsigned short parse_port(const char * text);
 
 /**
+ * @brief Manejador de SIGINT y SIGTERM: solo avisa que hay que terminar
+ *
+ * @param sig Numero de la senal
+ */
+void on_signal(int sig);
+
+/**
+ * @brief Reserva el nombre con el que se guardara un archivo que llega por put
+ *
+ * Si otro cliente esta recibiendo ahora un archivo con ese nombre, se agrega un sufijo
+ * antes de la extension (client.c queda client_1.c, client_2.c...), sin pisar archivos
+ * que ya existan con el sufijo.
+ *
+ * @param name Nombre pedido por el cliente
+ * @param final Buffer que recibe el nombre reservado
+ * @param size Capacidad de final
+ *
+ * @return 1 si se reservo un nombre, 0 si no se pudo
+ */
+int reserve_name(const char * name, char * final, size_t size);
+
+/**
+ * @brief Libera un nombre reservado con reserve_name
+ *
+ * @param name Nombre reservado
+ */
+void release_name(const char * name);
+
+/**
+ * @brief Pone el tiempo maximo de espera de lectura de un socket
+ *
+ * @param s Socket
+ * @param seconds Segundos, o 0 para esperar sin limite
+ */
+void set_timeout(int s, int seconds);
+
+/**
  * @brief Envia una respuesta al cliente
  *
  * @param s Socket del cliente
@@ -111,6 +168,10 @@ int main(int argc, char * argv[]) {
 	socklen_t addr_len; // Tamaño de la direccion
 	client * cl; // Cliente registrado
 	pthread_t tid; // Hilo del cliente
+	struct sigaction sa; // Manejador de SIGINT y SIGTERM
+	sigset_t block, orig; // Senales bloqueadas y mascara original
+	struct pollfd pfd; // Socket de escucha para ppoll
+	struct timespec deadline; // Hasta cuando se espera a los hilos al cerrar
 	int rc; // Resultado de pthread_create
 	int i;
 
@@ -180,14 +241,43 @@ int main(int argc, char * argv[]) {
 
 	printf("Servidor de archivos en el puerto %d, carpeta %s\n", port, files_dir);
 
+	//SIGINT y SIGTERM solo activan finished. Se bloquean desde ya: los hilos que se creen
+	//las heredan bloqueadas, y main las deja pasar solo mientras espera en ppoll
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = on_signal;
+	sigemptyset(&sa.sa_mask);
+	if (sigaction(SIGINT, &sa, NULL) == -1 || sigaction(SIGTERM, &sa, NULL) == -1) {
+		perror("sigaction");
+		exit(EXIT_FAILURE);
+	}
+	sigemptyset(&block);
+	sigaddset(&block, SIGINT);
+	sigaddset(&block, SIGTERM);
+	pthread_sigmask(SIG_BLOCK, &block, &orig);
+
 	// Inicio de estructura repetitiva
 	// para permitir la conexion con multiples clientes
 	while (!finished) {
-		// 4. Esperar por un cliente
+		// 4. Esperar por un cliente. ppoll desbloquea las senales solo mientras espera,
+		//    asi una senal que llega justo antes no se pierde
+		pfd.fd = s;
+		pfd.events = POLLIN;
+		pfd.revents = 0;
+		if (ppoll(&pfd, 1, NULL, &orig) == -1) {
+			if (errno != EINTR) {
+				perror("ppoll");
+				break;
+			}
+			continue; //llego una senal: se revisa finished
+		}
+
 		addr_len = sizeof(client_addr);
 		c = accept(s, (struct sockaddr *)&client_addr, &addr_len);
 		if (c == -1) {
-			perror("accept");
+			if (errno != EINTR && errno != ECONNABORTED && errno != EAGAIN) {
+				perror("accept");
+				usleep(100000); //sin descriptores u otro error que no pasa solo: no girar en vacio
+			}
 			continue;
 		}
 
@@ -211,11 +301,37 @@ int main(int argc, char * argv[]) {
 		pthread_detach(tid);
 	}
 
-	// 7. Cerrar el socket obtenido en el paso 1.
-	printf("Cerrando socket...\n");
+	// 7. Cerrar el socket obtenido en el paso 1 y despedir a los clientes
+	printf("Cerrando servidor...\n");
 	close(s);
 
+	//shutdown despierta a los hilos que esperan en un read; ellos mismos limpian y salen
+	pthread_mutex_lock(&clients_lock);
+	for (i = 0; i < MAXCLIENTS; i++) {
+		if (clients[i].socket != -1) {
+			shutdown(clients[i].socket, SHUT_RDWR);
+		}
+	}
+	clock_gettime(CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += SHUTDOWN_WAIT;
+	while (nclients > 0) {
+		if (pthread_cond_timedwait(&clients_empty, &clients_lock, &deadline) == ETIMEDOUT) {
+			break;
+		}
+	}
+	rc = nclients;
+	pthread_mutex_unlock(&clients_lock);
+
+	if (rc > 0) {
+		printf("Quedaron %d clientes sin terminar\n", rc);
+	}
+
 	exit(EXIT_SUCCESS);
+}
+
+void on_signal(int sig) {
+	(void)sig;
+	finished = 1;
 }
 
 unsigned short parse_port(const char * text) {
@@ -272,6 +388,9 @@ void remove_client(client * c) {
 	c->socket = -1; //La posicion queda libre
 	nclients--;
 	total = nclients;
+	if (nclients == 0) {
+		pthread_cond_broadcast(&clients_empty); //por si main espera para cerrar
+	}
 	pthread_mutex_unlock(&clients_lock);
 
 	printf("Cliente %s:%d desconectado (posicion %d, %d en total)\n", ip, port, index, total);
@@ -283,6 +402,8 @@ void * client_thread(void * arg) {
 	char msg[256]; // Mensaje de error para el cliente
 	char path[PATH_MAX]; // Ruta del archivo pedido con get
 	struct stat st; // Datos del archivo pedido
+	char stored[NAME_MAX]; // Nombre con el que se guarda un put
+	int ok; // Resultado de receive_file
 
 	//Leer solicitudes de tamaño fijo hasta que el cliente cierre o envie exit
 	while (read_all(c->socket, &req, sizeof(req)) == (ssize_t)sizeof(req)) {
@@ -303,16 +424,36 @@ void * client_thread(void * arg) {
 				}
 				continue;
 			}
-			if (!reply(c->socket, TRANSFER_AUTHORIZED, "listo para recibir")) {
+			//si otro cliente esta subiendo ahora el mismo nombre, este se guarda con sufijo
+			if (!reserve_name(req.filename, stored, sizeof(stored))) {
+				if (!reply(c->socket, TRANSFER_DENIED, "no se pudo reservar el nombre")) {
+					break;
+				}
+				continue;
+			}
+			if (equals(stored, req.filename)) {
+				snprintf(msg, sizeof(msg), "listo para recibir");
+			} else {
+				snprintf(msg, sizeof(msg), "listo para recibir, se guardara como %.200s", stored);
+			}
+			if (!reply(c->socket, TRANSFER_AUTHORIZED, msg)) {
+				release_name(stored);
 				break;
 			}
-			//ahora el cliente manda la informacion del archivo y su contenido
-			if (receive_file(c->socket, files_dir) != 1) {
+
+			//ahora el cliente manda la informacion del archivo y su contenido; si deja de
+			//mandar datos mas de TRANSFER_TIMEOUT segundos se le corta la conexion
+			set_timeout(c->socket, TRANSFER_TIMEOUT);
+			ok = receive_file(c->socket, files_dir, stored);
+			set_timeout(c->socket, 0);
+			release_name(stored);
+
+			if (ok != 1) {
 				//no se sabe en que punto quedo el flujo: se avisa y se cierra
 				reply(c->socket, TRANSFER_DENIED, "no se pudo recibir el archivo");
 				break;
 			}
-			printf("Cliente %s:%d: recibido %s\n", c->ip, ntohs(c->address.sin_port), req.filename);
+			printf("Cliente %s:%d: recibido %s\n", c->ip, ntohs(c->address.sin_port), stored);
 			if (!reply(c->socket, TRANSFER_AUTHORIZED, "archivo recibido")) {
 				break;
 			}
@@ -354,4 +495,75 @@ int reply(int s, response_code code, const char * message) {
 	snprintf(res.message, sizeof(res.message), "%s", message);
 
 	return write_all(s, &res, sizeof(res)) == (ssize_t)sizeof(res);
+}
+
+int reserve_name(const char * name, char * final, size_t size) {
+	char candidate[NAME_MAX];
+	char path[PATH_MAX];
+	const char * dot;
+	int n, i, free_slot, taken;
+
+	//si hay punto, el sufijo va antes de la extension (client.c -> client_1.c)
+	dot = strrchr(name, '.');
+	if (dot == NULL) {
+		dot = name + strlen(name);
+	}
+
+	pthread_mutex_lock(&busy_lock);
+	for (n = 0; n < 1000; n++) {
+		if (n == 0) {
+			snprintf(candidate, sizeof(candidate), "%s", name);
+		} else if (snprintf(candidate, sizeof(candidate), "%.*s_%d%s",
+				(int)(dot - name), name, n, dot) >= (int)sizeof(candidate)) {
+			break; //con el sufijo el nombre no cabe
+		}
+
+		taken = 0;
+		for (i = 0; i < MAXCLIENTS; i++) {
+			if (equals(busy[i], candidate)) {
+				taken = 1;
+			}
+		}
+		//el nombre original puede sobrescribir uno que ya existe; los que llevan sufijo no
+		if (!taken && n > 0) {
+			taken = (snprintf(path, sizeof(path), "%s/%s", files_dir, candidate) >= (int)sizeof(path)
+				|| access(path, F_OK) == 0);
+		}
+		if (taken) {
+			continue;
+		}
+
+		for (free_slot = 0; free_slot < MAXCLIENTS && busy[free_slot][0] != '\0'; free_slot++);
+		if (free_slot == MAXCLIENTS || strlen(candidate) >= size) {
+			break;
+		}
+		strcpy(busy[free_slot], candidate);
+		strcpy(final, candidate);
+		pthread_mutex_unlock(&busy_lock);
+		return 1;
+	}
+	pthread_mutex_unlock(&busy_lock);
+
+	return 0;
+}
+
+void release_name(const char * name) {
+	int i;
+
+	pthread_mutex_lock(&busy_lock);
+	for (i = 0; i < MAXCLIENTS; i++) {
+		if (equals(busy[i], name)) {
+			busy[i][0] = '\0';
+			break;
+		}
+	}
+	pthread_mutex_unlock(&busy_lock);
+}
+
+void set_timeout(int s, int seconds) {
+	struct timeval tv;
+
+	tv.tv_sec = seconds;
+	tv.tv_usec = 0;
+	setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 }

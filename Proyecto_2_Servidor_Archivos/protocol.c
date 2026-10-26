@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <libgen.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,16 +15,20 @@
 /* tamano del bloque con el que se copia el contenido */
 #define BLOCK 65536
 
+volatile sig_atomic_t protocol_abort = 0;
+
 int valid_filename(const char * name) {
-	if (name[0] == '\0' || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+	//los nombres que empiezan por "." (incluidos "." y "..") quedan para uso interno
+	if (name[0] == '\0' || name[0] == '.') {
 		return 0;
 	}
 	return strchr(name, '/') == NULL;
 }
 
-int receive_file(int s, char * destination_folder) {
+int receive_file(int s, char * destination_folder, const char * store_as) {
 	file_info info;
 	char path[PATH_MAX];
+	char temp[PATH_MAX];
 	char buf[BLOCK];
 	int64_t left;
 	size_t n;
@@ -44,12 +49,18 @@ int receive_file(int s, char * destination_folder) {
 	if (info.size < 0 || !valid_filename(info.filename)) {
 		return 0;
 	}
-	if (snprintf(path, sizeof(path), "%s/%s", destination_folder, info.filename) >= (int)sizeof(path)) {
+
+	//con store_as el que recibe elige el nombre final (por ejemplo con sufijo)
+	if (store_as == NULL) {
+		store_as = info.filename;
+	}
+	if (snprintf(path, sizeof(path), "%s/%s", destination_folder, store_as) >= (int)sizeof(path) ||
+		snprintf(temp, sizeof(temp), "%s/.%s.part", destination_folder, store_as) >= (int)sizeof(temp)) {
 		return 0;
 	}
 
-	//3. crear el archivo (nuevo o existente) y copiar exactamente size bytes
-	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
+	//3. se copia a un archivo temporal y al final se renombra: nadie ve un archivo a medias
+	fd = open(temp, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
 	if (fd == -1) {
 		return 0;
 	}
@@ -57,14 +68,18 @@ int receive_file(int s, char * destination_folder) {
 	for (left = info.size; left > 0; left -= n) {
 		n = left < BLOCK ? (size_t)left : BLOCK;
 		if (read_all(s, buf, n) != (ssize_t)n || write_all(fd, buf, n) != (ssize_t)n) {
-			//el cliente se fue a medias o el disco fallo: no dejar el archivo partido
+			//el otro extremo se fue a medias, hubo una senal o el disco fallo
 			close(fd);
-			unlink(path);
+			unlink(temp);
 			return 0;
 		}
 	}
 
-	return close(fd) == 0;
+	if (close(fd) != 0 || rename(temp, path) != 0) {
+		unlink(temp);
+		return 0;
+	}
+	return 1;
 }
 
 int send_file(int s, char * path) {
@@ -116,6 +131,16 @@ int send_file(int s, char * path) {
 	return 1;
 }
 
+int send_not_found(int s, const char * name) {
+	file_info info;
+
+	memset(&info, 0, sizeof(info));
+	info.size = -1;
+	strncpy(info.filename, name, sizeof(info.filename) - 1);
+
+	return write_all(s, &info, sizeof(info)) == (ssize_t)sizeof(info);
+}
+
 ssize_t read_all(int fd, void * buf, size_t count) {
 	size_t total = 0;
 	char * ptr = (char *)buf;
@@ -127,8 +152,8 @@ ssize_t read_all(int fd, void * buf, size_t count) {
 			break; //El otro extremo cerro la conexion
 		}
 		if (n < 0) {
-			if (errno == EINTR) {
-				continue; //Una senal interrumpio la lectura: reintentar
+			if (errno == EINTR && !protocol_abort) {
+				continue; //Una senal sin importancia interrumpio la lectura: reintentar
 			}
 			return -1;
 		}
@@ -146,7 +171,7 @@ ssize_t write_all(int fd, const void * buf, size_t count) {
 	while (total < count) {
 		n = write(fd, ptr + total, count - total);
 		if (n < 0) {
-			if (errno == EINTR) {
+			if (errno == EINTR && !protocol_abort) {
 				continue;
 			}
 			return -1;
@@ -158,14 +183,4 @@ ssize_t write_all(int fd, const void * buf, size_t count) {
 	}
 
 	return total;
-}
-
-int send_not_found(int s, const char * name) {
-	file_info info;
-
-	memset(&info, 0, sizeof(info));
-	info.size = -1;
-	strncpy(info.filename, name, sizeof(info.filename) - 1);
-
-	return write_all(s, &info, sizeof(info)) == (ssize_t)sizeof(info);
 }

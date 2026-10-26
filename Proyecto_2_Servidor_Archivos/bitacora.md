@@ -95,3 +95,32 @@ Pruebas en la VM, todo bien a la primera:
 - Subir un `texto.txt` nuevo y bajarlo enseguida devuelve la versión nueva.
 
 Lo que falta es lo más delicado: SIGINT y SIGTERM, el sufijo para nombres repetidos y qué pasa si alguien se queda colgado a mitad de una subida.
+
+## 26 de octubre, cuarto commit
+
+Este fue el más enredado: señales, nombres repetidos y los casos donde alguien se queda colgado.
+
+Señales. Quise evitar el problema que me quedó pendiente en el taller 5, que una señal llegue justo entre revisar la bandera y entrar a esperar. En el servidor bloqueo SIGINT y SIGTERM desde el principio, así los hilos las heredan bloqueadas y solo `main` las recibe, y espera conexiones con `ppoll`, que las desbloquea solo mientras espera. El manejador solo pone `finished` en 1. Al terminar, el servidor cierra el socket de escucha, hace `shutdown` a los sockets de los clientes para despertar a los hilos que están en un `read`, y espera hasta 5 segundos a que se vayan todos (con una variable de condición, porque los hilos son `detached` y no se les puede hacer `join`). `ppoll` pide `_GNU_SOURCE`, que no estaba y por eso no compilaba al principio.
+
+En el cliente el manejador pone una bandera y también `protocol_abort`, que está en `protocol.c`. Sin eso `read_all` seguía reintentando cuando una señal lo interrumpía y el cliente no salía hasta que llegaba la respuesta.
+
+Nombres repetidos. Hay una tabla de nombres que se están recibiendo, protegida con otro mutex. Si el nombre ya está ahí, se le pone sufijo antes de la extensión (`dup.txt` pasa a `dup_1.txt`), y también se salta los sufijos que ya existen en disco para no pisar archivos viejos. El nombre original sí puede sobrescribir uno que ya está guardado, como pide el PDF. El servidor le dice al cliente cómo lo va a guardar.
+
+Para que nadie vea archivos a medias, `receive_file` ahora escribe en `.nombre.part` y al final hace `rename`. Por eso `valid_filename` rechaza todo lo que empiece por punto, para que un cliente no pueda usar esos nombres. Una consecuencia buena: `rename` reemplaza un enlace simbólico en vez de seguirlo.
+
+Si un cliente deja de mandar datos en una subida más de 30 segundos, el servidor lo corta (`SO_RCVTIMEO`). También agregué una pausa corta cuando `accept` falla por algo que no se arregla solo, para no girar en vacío.
+
+Pruebas en la VM:
+
+- Cuatro clientes subiendo a la vez el mismo nombre: la primera prueba no sirvió, porque los archivos eran tan rápidos de copiar que casi no se cruzaban. La repetí dejando tres subidas atascadas con el mismo nombre (con un programa de prueba que arma los mensajes a mano) y luego una subida real. Se reservaron `dup2.txt`, `dup2_1.txt` y `dup2_2.txt`, y la real quedó como `dup2_3.txt`.
+- Con `dup3_1.txt` ya en disco, la subida real quedó como `dup3_2.txt` y el viejo siguió intacto. Sin extensión, `notas` quedó `notas_1`.
+- Subir de nuevo un nombre que no está en uso sobrescribe, sin sufijo.
+- Nombres como `.oculto` y `.dup.txt.part` se rechazan.
+- SIGTERM al servidor con dos clientes conectados: cerró con código 0 y los dos clientes se despidieron. SIGINT con una subida detenida a la mitad: terminó con código 0, el `.part` desapareció y no quedó nada.
+- Cliente con SIGINT en el prompt: imprime "Interrumpido" y sale con 0. Cliente con SIGTERM mientras bajaba de un servidor falso que se atasca: salió al instante y no quedó ningún archivo en `client_files`.
+- Subida atascada sin señales: el servidor cortó la conexión a los 32 segundos y no dejó temporales.
+- Repetí las pruebas de `put` y `get` del commit anterior contra esta versión: todo igual, md5 de 50 MB incluido.
+
+Un error mío en las pruebas: probé a un cliente desde una carpeta que no tenía el ejecutable, y la salida salió vacía. No era un bug del programa.
+
+Sin probar: señales con muchos clientes subiendo al mismo tiempo, y qué pasa si el disco se llena a mitad de una subida. Falta el último commit: Doxygen, comentarios, el README.txt para el zip y una pasada final.
