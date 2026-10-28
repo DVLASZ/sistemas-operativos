@@ -7,11 +7,12 @@
 CC      = gcc
 CFLAGS  = -std=gnu11 -Wall -Wextra -g
 LDFLAGS = -pthread
+SERVER_LIBS = -lcrypt
 
 all: server client
 
 server: server.o fsutil.o util.o netutil.o protocol.o
-	$(CC) $(CFLAGS) -o server server.o fsutil.o util.o netutil.o protocol.o $(LDFLAGS)
+	$(CC) $(CFLAGS) -o server server.o fsutil.o util.o netutil.o protocol.o $(LDFLAGS) $(SERVER_LIBS)
 
 client: client.o fsutil.o util.o netutil.o protocol.o split.o
 	$(CC) $(CFLAGS) -o client client.o fsutil.o util.o netutil.o protocol.o split.o $(LDFLAGS)

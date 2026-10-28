@@ -55,7 +55,7 @@ int receive_file(int s, char * destination_folder, const char * store_as) {
 	}
 
 	//2. el nombre y el tamano vienen del otro extremo, no se confia en ellos
-	if (info.size < 0 || !valid_filename(info.filename)) {
+	if (info.size < 0 || info.size > MAX_FILE_SIZE || !valid_filename(info.filename)) {
 		return 0;
 	}
 

@@ -17,6 +17,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <termios.h>
 #include <netinet/ip.h>
 #include <unistd.h>
 
@@ -98,6 +99,16 @@ int do_get(int s, const char * client_dir, const char * name);
  */
 int do_list(int s);
 
+/**
+ * @brief Lee la clave del teclado sin mostrarla (si la entrada es una terminal)
+ *
+ * @param pass Buffer que recibe la clave, sin el salto de linea
+ * @param size Capacidad del buffer
+ *
+ * @return 1 si leyo una linea, 0 si se acabo la entrada
+ */
+int read_password(char * pass, size_t size);
+
 int main(int argc, char * argv[]) {
 	int s; // Conector
 	const char * host = "127.0.0.1"; // Servidor por defecto: esta misma maquina
@@ -113,6 +124,8 @@ int main(int argc, char * argv[]) {
 	split_list * cmd; // Linea dividida en palabras
 	int alive; // 0 si se perdio la conexion con el servidor
 	int got; // Resultado de leer una linea
+	char pass[PASS_MAX + 2]; // Clave del usuario
+	int tries; // Claves probadas
 	struct sigaction sa; // Manejador de SIGINT y SIGTERM
 
 	if (argc > 4) {
@@ -209,6 +222,25 @@ int main(int argc, char * argv[]) {
 		close(s);
 		exit(EXIT_FAILURE);
 	}
+	//el servidor pide la clave; si es la primera vez que entra ese usuario, la que ponga queda como su clave
+	for (tries = 0; ; tries++) {
+		if (tries == 3 || !read_password(pass, sizeof(pass))) {
+			fprintf(stderr, "No se pudo entrar\n");
+			close(s);
+			exit(EXIT_FAILURE);
+		}
+		if (!send_request(s, "pass", pass) || read_all(s, &login, sizeof(login)) != (ssize_t)sizeof(login)) {
+			fprintf(stderr, "Se perdio la conexion con el servidor\n");
+			close(s);
+			exit(EXIT_FAILURE);
+		}
+		login.message[sizeof(login.message) - 1] = 0;
+		if (login.code == TRANSFER_AUTHORIZED) {
+			break;
+		}
+		fprintf(stderr, "Servidor: %s\n", login.message);
+	}
+	memset(pass, 0, sizeof(pass));
 	printf("Usuario %s. Comandos: put ARCHIVO | get ARCHIVO | list | exit\n", user);
 
 	// 3. Comunicacion: leer un comando, enviarlo y esperar la respuesta
@@ -260,6 +292,7 @@ int main(int argc, char * argv[]) {
 		}
 
 		if (equals(cmd->parts[0], "put") || equals(cmd->parts[0], "get")) {
+			alive = 1; //si el comando no sale, la conexion sigue como estaba
 			if (cmd->count < 2) {
 				printf("Uso: %s ARCHIVO\n", cmd->parts[0]);
 			} else if (strlen(cmd->parts[1]) >= NAME_MAX) {
@@ -341,6 +374,10 @@ int do_put(int s, const char * path) {
 		printf("%s no existe o no es un archivo\n", path);
 		return 1;
 	}
+	if (st.st_size > MAX_FILE_SIZE) {
+		printf("%s es demasiado grande (maximo 1 GiB)\n", path);
+		return 1;
+	}
 
 	//al servidor le llega solo el nombre, sin la ruta
 	name = strrchr(path, '/');
@@ -390,6 +427,29 @@ void on_signal(int sig) {
 	(void)sig;
 	interrupted = 1;
 	protocol_abort = 1;
+}
+
+int read_password(char * pass, size_t size) {
+	struct termios old, quiet;
+	int tty = isatty(STDIN_FILENO);
+	int ok;
+
+	printf("Clave: ");
+	fflush(stdout);
+	if (tty && tcgetattr(STDIN_FILENO, &old) == 0) {
+		quiet = old;
+		quiet.c_lflag &= ~ECHO;
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &quiet);
+	} else {
+		tty = 0;
+	}
+	ok = (fgets(pass, size, stdin) != NULL);
+	if (tty) {
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &old);
+		printf("\n");
+	}
+	pass[strcspn(pass, "\r\n")] = '\0';
+	return ok;
 }
 
 int do_list(int s) {

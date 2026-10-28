@@ -27,11 +27,17 @@
 /** @brief Largo maximo del nombre de usuario */
 #define USER_MAX 32
 
+/** @brief Largo maximo de la clave */
+#define PASS_MAX 64
+
+/** @brief Tamano maximo de un archivo que se sube o se baja (1 GiB) */
+#define MAX_FILE_SIZE (1LL << 30)
+
 /**
 * @brief Solicitud del cliente
 */
 typedef struct {
-	char operation[16]; /**< Operacion a realizar (get, put, exit)*/
+	char operation[16]; /**< Operacion a realizar (user, pass, list, get, put, exit)*/
 	char filename[NAME_MAX]; /**< Nombre del archivo a transferir */
 }request;
 

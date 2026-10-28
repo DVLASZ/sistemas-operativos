@@ -12,8 +12,10 @@
 */
 #define _GNU_SOURCE //para ppoll
 #include <arpa/inet.h>
+#include <crypt.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <poll.h>
 #include <pthread.h>
@@ -44,8 +46,13 @@ typedef struct {
 	int index; /**< Indice dentro del arreglo de clientes*/
 	struct sockaddr_in address; /**< Direccion del cliente */
 	char ip[INET_ADDRSTRLEN]; /**< Direccion IP en formato aaa.bbb.ccc.ddd */
-	char user[USER_MAX + 1]; /**< Usuario con el que se identifico; vacio hasta que lo haga */
+	char user[USER_MAX + 1]; /**< Usuario ya autenticado; vacio hasta que ponga la clave bien */
+	char pending[USER_MAX + 1]; /**< Usuario que dijo ser y todavia no puso la clave */
+	int tries; /**< Claves incorrectas seguidas */
 }client;
+
+/** @brief Claves incorrectas que se aceptan antes de cortar la conexion */
+#define MAX_TRIES 3
 
 /** @brief Arreglo de clientes (estatico) */
 static client clients[MAXCLIENTS];
@@ -173,6 +180,20 @@ int send_list(int s, const char * dir);
  * @return 1 si se envio completa, 0 si ocurre un error
  */
 int reply(int s, response_code code, const char * message);
+
+/**
+ * @brief Revisa la clave de un usuario, o la crea si es la primera vez que entra
+ *
+ * La clave se guarda con crypt (SHA-512 y sal al azar) en el archivo oculto .clave de la
+ * carpeta del usuario. Si dos clientes crean el mismo usuario a la vez, solo uno la define.
+ *
+ * @param udir Carpeta del usuario
+ * @param slot Posicion del cliente, para nombrar el temporal sin chocar con otros hilos
+ * @param pass Clave que mando el cliente
+ *
+ * @return 1 si la clave sirve, 0 si es incorrecta, -1 si hubo un error
+ */
+int check_password(const char * udir, int slot, const char * pass);
 
 int main(int argc, char * argv[]) {
 	int s, c; // Conectores
@@ -374,7 +395,10 @@ client * add_client(int c, struct sockaddr_in * addr) {
 			cl->socket = c;
 			cl->index = i;
 			cl->address = *addr;
-			cl->user[0] = '\0'; //la posicion puede venir de otro cliente: sin usuario hasta que se identifique
+			//la posicion puede venir de otro cliente: sin usuario hasta que se identifique
+			cl->user[0] = '\0';
+			cl->pending[0] = '\0';
+			cl->tries = 0;
 			inet_ntop(AF_INET, &addr->sin_addr, cl->ip, INET_ADDRSTRLEN);
 			nclients++;
 			total = nclients;
@@ -434,19 +458,46 @@ void * client_thread(void * arg) {
 			break;
 		}
 
-		//lo primero que debe hacer el cliente es decir quien es: cada usuario tiene su carpeta
+		//lo primero que debe hacer el cliente es decir quien es y poner su clave
 		if (equals(req.operation, "user")) {
 			if (c->user[0] != '\0') {
 				ok = reply(c->socket, TRANSFER_DENIED, "ya esta identificado");
 			} else if (!valid_user(req.filename)) {
 				ok = reply(c->socket, TRANSFER_DENIED, "usuario no valido");
-			} else if (snprintf(udir, sizeof(udir), "%s/%s", files_dir, req.filename) >= (int)sizeof(udir)
+			} else {
+				snprintf(c->pending, sizeof(c->pending), "%.*s", USER_MAX, req.filename);
+				ok = reply(c->socket, TRANSFER_AUTHORIZED, "falta la clave");
+			}
+			if (!ok) {
+				break;
+			}
+			continue;
+		}
+
+		if (equals(req.operation, "pass")) {
+			if (c->user[0] != '\0') {
+				ok = reply(c->socket, TRANSFER_DENIED, "ya esta identificado");
+			} else if (c->pending[0] == '\0') {
+				ok = reply(c->socket, TRANSFER_DENIED, "primero hay que decir el usuario");
+			} else if (req.filename[0] == '\0' || strlen(req.filename) > PASS_MAX) {
+				ok = reply(c->socket, TRANSFER_DENIED, "la clave debe tener de 1 a 64 caracteres");
+			} else if (snprintf(udir, sizeof(udir), "%s/%s", files_dir, c->pending) >= (int)sizeof(udir)
 				|| !ensure_dir(udir)) {
 				ok = reply(c->socket, TRANSFER_DENIED, "no se pudo crear la carpeta del usuario");
 			} else {
-				snprintf(c->user, sizeof(c->user), "%.*s", USER_MAX, req.filename);
-				printf("Cliente %s:%d: usuario %s\n", c->ip, ntohs(c->address.sin_port), c->user);
-				ok = reply(c->socket, TRANSFER_AUTHORIZED, "identificado");
+				ok = check_password(udir, c->index, req.filename);
+				if (ok == 1) {
+					snprintf(c->user, sizeof(c->user), "%s", c->pending);
+					printf("Cliente %s:%d: usuario %s\n", c->ip, ntohs(c->address.sin_port), c->user);
+					ok = reply(c->socket, TRANSFER_AUTHORIZED, "identificado");
+				} else if (ok == 0 && ++c->tries < MAX_TRIES) {
+					ok = reply(c->socket, TRANSFER_DENIED, "clave incorrecta");
+				} else {
+					//tercera clave mala, o un error del servidor: se corta
+					reply(c->socket, TRANSFER_DENIED, ok == 0 ? "clave incorrecta, se cierra la conexion" : "error del servidor");
+					printf("Cliente %s:%d: no pudo entrar como %s\n", c->ip, ntohs(c->address.sin_port), c->pending);
+					break;
+				}
 			}
 			if (!ok) {
 				break;
@@ -551,6 +602,75 @@ int reply(int s, response_code code, const char * message) {
 	snprintf(res.message, sizeof(res.message), "%s", message);
 
 	return write_all(s, &res, sizeof(res)) == (ssize_t)sizeof(res);
+}
+
+int check_password(const char * udir, int slot, const char * pass) {
+	static const char alphabet[] = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+	char path[PATH_MAX], temp[PATH_MAX];
+	char setting[32], stored[256];
+	struct crypt_data * data;
+	unsigned char rnd[16];
+	char * hash;
+	FILE * f;
+	int fd, i, result = -1;
+
+	data = calloc(1, sizeof(*data));
+	if (data == NULL || snprintf(path, sizeof(path), "%s/.clave", udir) >= (int)sizeof(path) ||
+		snprintf(temp, sizeof(temp), "%s/.clave.%d", udir, slot) >= (int)sizeof(temp)) {
+		free(data);
+		return -1;
+	}
+
+	//si ya hay clave se compara con esa
+	f = fopen(path, "r");
+	if (f != NULL) {
+		if (fgets(stored, sizeof(stored), f) != NULL) {
+			stored[strcspn(stored, "\n")] = '\0';
+			hash = crypt_r(pass, stored, data);
+			if (hash != NULL && hash[0] != '*') {
+				result = (strcmp(hash, stored) == 0);
+			}
+		}
+		fclose(f);
+		free(data);
+		return result;
+	}
+
+	//usuario nuevo: la clave que manda queda como su clave. Se escribe en un temporal y se
+	//enlaza a .clave, que falla si otro cliente llego primero (entonces se compara con la suya)
+	fd = open("/dev/urandom", O_RDONLY);
+	if (fd == -1 || read(fd, rnd, sizeof(rnd)) != (ssize_t)sizeof(rnd)) {
+		if (fd != -1) {
+			close(fd);
+		}
+		free(data);
+		return -1;
+	}
+	close(fd);
+	strcpy(setting, "$6$");
+	for (i = 0; i < 16; i++) {
+		setting[3 + i] = alphabet[rnd[i] % 64];
+	}
+	strcpy(setting + 19, "$");
+
+	hash = crypt_r(pass, setting, data);
+	if (hash != NULL && hash[0] != '*') {
+		f = fopen(temp, "w");
+		if (f != NULL) {
+			fchmod(fileno(f), 0600);
+			fprintf(f, "%s\n", hash);
+			if (fclose(f) == 0) {
+				if (link(temp, path) == 0) {
+					result = 1;
+				} else if (errno == EEXIST) {
+					result = check_password(udir, slot, pass);
+				}
+			}
+			unlink(temp);
+		}
+	}
+	free(data);
+	return result;
 }
 
 int send_list(int s, const char * dir) {

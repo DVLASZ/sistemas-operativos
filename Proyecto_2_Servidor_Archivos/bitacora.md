@@ -172,3 +172,32 @@ Pruebas en la VM:
 - Repetí los sanitizadores con la carga mezclada, ahora con tres usuarios, y salieron sin avisos ni AddressSanitizer ni ThreadSanitizer. Doxygen sigue sin advertencias.
 
 Sin probar: muchos usuarios distintos a la vez (probé tres), y qué pasa si dos conexiones del mismo usuario hacen `get` de un archivo mientras otra lo sobrescribe. Con el `rename` el archivo nunca está a medias, pero un `get` que ya estaba mandando uno viejo seguiría con el viejo.
+
+## 28 de octubre, clave por usuario y pruebas que faltaban
+
+Antes dejé dicho que cualquiera podía escribir "ana" y ver los archivos de ana. Hoy le puse clave.
+
+La primera vez que un usuario entra, la clave que escribe queda como su clave. Después hay que ponerla igual. Se guarda en `files/USUARIO/.clave` con `crypt` (SHA-512 y una sal al azar), con permisos 600, y como empieza por punto ni `list` ni `get` la tocan. El cliente la pide sin mostrarla si la entrada es una terminal. Son de 1 a 64 caracteres y a la tercera mala el servidor corta la conexión. Se manda por el socket sin cifrar, eso no lo arreglé.
+
+El protocolo cambió un poco: `user` solo guarda el nombre y falta mandar `pass`. La carpeta del usuario se crea al poner la clave, no antes, para que quien solo prueba nombres no deje carpetas vacías. El Makefile ahora enlaza el servidor con `-lcrypt`.
+
+Si dos clientes crean a la vez el mismo usuario nuevo, la clave se escribe en un temporal y se enlaza a `.clave` con `link`, que falla si ya existe. El que pierde compara contra la del ganador.
+
+También puse un tope de 1 GiB por archivo. El cliente lo revisa antes de mandar nada y el servidor lo revisa en `receive_file`, por si alguien declara un tamaño mayor.
+
+Lo que probé en la VM:
+
+- Clave mala tres veces: corta. Clave buena después: entra. Beto con otra clave no ve ni baja lo de ana. Clave vacía y clave de 65 caracteres: rechazadas.
+- Mandando los mensajes a mano con un script de Python: `list`, `put`, `get` y `pass` sin identificarse dan error, y `list` justo después de `user` también, porque falta la clave.
+- Archivo de 1 GiB más un byte: el cliente no lo manda. Declarando 2 GiB desde el script, el servidor contesta que no se pudo recibir y sigue vivo.
+- 40 usuarios a la vez, cada uno con un put, un get y un list: los 40 archivos quedaron iguales en el servidor y al bajarlos (md5).
+- 10 clientes creando el mismo usuario nuevo con claves distintas: solo entró uno, y después solo sirve esa clave.
+- Un get repetido 12 veces mientras otro cliente sobrescribía el mismo archivo con dos versiones de 20 MB: los 12 llegaron completos y de una sola versión, ninguno mezclado.
+- Disco lleno, con un tmpfs de 3 MB y una subida de 6 MB: el servidor contesta que no pudo recibir, no queda ningún `.part` y otro cliente sube un archivo chico sin problema. Con 2 MB ni siquiera se pudo crear la carpeta del usuario nuevo y el login dio "error del servidor".
+- ASan con UBSan y TSan con la carga de los 40 usuarios: sin avisos. Doxygen sin advertencias.
+
+Un bug que no tenía que ver con la clave: al compilar con `-O2` salió que `alive` en `main` del cliente podía quedar sin valor cuando hacía `put` o `get` sin nombre de archivo, o con uno que no existe. Se ve el "Uso:" y después `if (!alive)` leía basura. Ya lo inicializo antes del `if`.
+
+Errores míos en las pruebas, no del programa: la primera prueba de disco lleno falló porque el archivo de 6 MB lo generé dentro del mismo disco de 2 MB, y el script de los 40 usuarios se quedó colgado porque su `wait` esperaba también al servidor.
+
+Lo que sigue sin resolver: 256 conexiones inactivas llenan el servidor, escucha en todas las interfaces, y las tres claves malas son por conexión, así que alguien puede volver a conectarse y seguir probando.
