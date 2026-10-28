@@ -22,7 +22,10 @@
 
 
 /** @brief Puerto por defecto */
-#define DEFAULT_PORT 1234 
+#define DEFAULT_PORT 1234
+
+/** @brief Largo maximo del nombre de usuario */
+#define USER_MAX 32
 
 /**
 * @brief Solicitud del cliente
@@ -125,6 +128,16 @@ int send_file(int s, char * path);
 * @return 1 si es valido, 0 si no
 */
 int valid_filename(const char * name);
+
+/**
+* @brief Dice si un nombre de usuario es valido: de 1 a USER_MAX caracteres entre letras,
+* numeros, "_", "-" y ".", sin empezar por "."
+*
+* @param name Nombre recibido
+*
+* @return 1 si es valido, 0 si no
+*/
+int valid_user(const char * name);
 
 /**
 * @brief Avisa que el archivo pedido no existe: manda un file_info con size -1 y nada mas

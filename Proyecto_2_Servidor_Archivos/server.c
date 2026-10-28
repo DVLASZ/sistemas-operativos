@@ -12,6 +12,7 @@
 */
 #define _GNU_SOURCE //para ppoll
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <errno.h>
 #include <limits.h>
 #include <poll.h>
@@ -43,6 +44,7 @@ typedef struct {
 	int index; /**< Indice dentro del arreglo de clientes*/
 	struct sockaddr_in address; /**< Direccion del cliente */
 	char ip[INET_ADDRSTRLEN]; /**< Direccion IP en formato aaa.bbb.ccc.ddd */
+	char user[USER_MAX + 1]; /**< Usuario con el que se identifico; vacio hasta que lo haga */
 }client;
 
 /** @brief Arreglo de clientes (estatico) */
@@ -66,8 +68,8 @@ static char files_dir[PATH_MAX];
 /** @brief Se avisa cuando ya no queda ningun cliente */
 static pthread_cond_t clients_empty = PTHREAD_COND_INITIALIZER;
 
-/** @brief Nombres que se estan recibiendo en este momento (uno por cliente como maximo) */
-static char busy[MAXCLIENTS][NAME_MAX];
+/** @brief Nombres que se estan recibiendo en este momento, como USUARIO/NOMBRE (uno por cliente como maximo) */
+static char busy[MAXCLIENTS][USER_MAX + NAME_MAX + 2];
 
 /** @brief Mutex que protege la tabla de nombres en uso */
 static pthread_mutex_t busy_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -124,20 +126,22 @@ void on_signal(int sig);
  * antes de la extension (client.c queda client_1.c, client_2.c...), sin pisar archivos
  * que ya existan con el sufijo.
  *
+ * @param user Usuario que sube el archivo: los nombres solo chocan dentro de su carpeta
  * @param name Nombre pedido por el cliente
  * @param final Buffer que recibe el nombre reservado
  * @param size Capacidad de final
  *
  * @return 1 si se reservo un nombre, 0 si no se pudo
  */
-int reserve_name(const char * name, char * final, size_t size);
+int reserve_name(const char * user, const char * name, char * final, size_t size);
 
 /**
  * @brief Libera un nombre reservado con reserve_name
  *
+ * @param user Usuario dueño de la reserva
  * @param name Nombre reservado
  */
-void release_name(const char * name);
+void release_name(const char * user, const char * name);
 
 /**
  * @brief Pone el tiempo maximo de espera de lectura de un socket
@@ -146,6 +150,18 @@ void release_name(const char * name);
  * @param seconds Segundos, o 0 para esperar sin limite
  */
 void set_timeout(int s, int seconds);
+
+/**
+ * @brief Manda la lista de archivos de una carpeta: un file_info por archivo y uno final con size -1
+ *
+ * No incluye los nombres que empiezan por punto ni lo que no sea un archivo regular.
+ *
+ * @param s Socket del cliente
+ * @param dir Carpeta del usuario
+ *
+ * @return 1 si se envio completa, 0 si ocurre un error
+ */
+int send_list(int s, const char * dir);
 
 /**
  * @brief Envia una respuesta al cliente
@@ -358,6 +374,7 @@ client * add_client(int c, struct sockaddr_in * addr) {
 			cl->socket = c;
 			cl->index = i;
 			cl->address = *addr;
+			cl->user[0] = '\0'; //la posicion puede venir de otro cliente: sin usuario hasta que se identifique
 			inet_ntop(AF_INET, &addr->sin_addr, cl->ip, INET_ADDRSTRLEN);
 			nclients++;
 			total = nclients;
@@ -400,6 +417,7 @@ void * client_thread(void * arg) {
 	client * c = (client *)arg;
 	request req; // Solicitud del cliente
 	char msg[256]; // Mensaje de error para el cliente
+	char udir[PATH_MAX]; // Carpeta del usuario: files/USUARIO
 	char path[PATH_MAX]; // Ruta del archivo pedido con get
 	struct stat st; // Datos del archivo pedido
 	char stored[NAME_MAX]; // Nombre con el que se guarda un put
@@ -416,6 +434,44 @@ void * client_thread(void * arg) {
 			break;
 		}
 
+		//lo primero que debe hacer el cliente es decir quien es: cada usuario tiene su carpeta
+		if (equals(req.operation, "user")) {
+			if (c->user[0] != '\0') {
+				ok = reply(c->socket, TRANSFER_DENIED, "ya esta identificado");
+			} else if (!valid_user(req.filename)) {
+				ok = reply(c->socket, TRANSFER_DENIED, "usuario no valido");
+			} else if (snprintf(udir, sizeof(udir), "%s/%s", files_dir, req.filename) >= (int)sizeof(udir)
+				|| !ensure_dir(udir)) {
+				ok = reply(c->socket, TRANSFER_DENIED, "no se pudo crear la carpeta del usuario");
+			} else {
+				snprintf(c->user, sizeof(c->user), "%.*s", USER_MAX, req.filename);
+				printf("Cliente %s:%d: usuario %s\n", c->ip, ntohs(c->address.sin_port), c->user);
+				ok = reply(c->socket, TRANSFER_AUTHORIZED, "identificado");
+			}
+			if (!ok) {
+				break;
+			}
+			continue;
+		}
+
+		if (c->user[0] == '\0') {
+			if (!reply(c->socket, TRANSFER_DENIED, "primero hay que identificarse con un usuario")) {
+				break;
+			}
+			continue;
+		}
+		//a partir de aqui todo ocurre dentro de la carpeta del usuario, no se ve la de los demas
+		if (snprintf(udir, sizeof(udir), "%s/%s", files_dir, c->user) >= (int)sizeof(udir)) {
+			break; //la ruta no cabe: no deberia pasar, ya se comprobo al identificarse
+		}
+
+		if (equals(req.operation, "list")) {
+			if (!send_list(c->socket, udir)) {
+				break;
+			}
+			continue;
+		}
+
 		if (equals(req.operation, "put")) {
 			//el nombre se revisa antes de aceptar el archivo
 			if (!valid_filename(req.filename)) {
@@ -424,8 +480,8 @@ void * client_thread(void * arg) {
 				}
 				continue;
 			}
-			//si otro cliente esta subiendo ahora el mismo nombre, este se guarda con sufijo
-			if (!reserve_name(req.filename, stored, sizeof(stored))) {
+			//si ese mismo usuario esta subiendo ahora el mismo nombre, este se guarda con sufijo
+			if (!reserve_name(c->user, req.filename, stored, sizeof(stored))) {
 				if (!reply(c->socket, TRANSFER_DENIED, "no se pudo reservar el nombre")) {
 					break;
 				}
@@ -437,23 +493,23 @@ void * client_thread(void * arg) {
 				snprintf(msg, sizeof(msg), "listo para recibir, se guardara como %.200s", stored);
 			}
 			if (!reply(c->socket, TRANSFER_AUTHORIZED, msg)) {
-				release_name(stored);
+				release_name(c->user, stored);
 				break;
 			}
 
 			//ahora el cliente manda la informacion del archivo y su contenido; si deja de
 			//mandar datos mas de TRANSFER_TIMEOUT segundos se le corta la conexion
 			set_timeout(c->socket, TRANSFER_TIMEOUT);
-			ok = receive_file(c->socket, files_dir, stored);
+			ok = receive_file(c->socket, udir, stored);
 			set_timeout(c->socket, 0);
-			release_name(stored);
+			release_name(c->user, stored);
 
 			if (ok != 1) {
 				//no se sabe en que punto quedo el flujo: se avisa y se cierra
 				reply(c->socket, TRANSFER_DENIED, "no se pudo recibir el archivo");
 				break;
 			}
-			printf("Cliente %s:%d: recibido %s\n", c->ip, ntohs(c->address.sin_port), stored);
+			printf("Cliente %s:%d (%s): recibido %s\n", c->ip, ntohs(c->address.sin_port), c->user, stored);
 			if (!reply(c->socket, TRANSFER_AUTHORIZED, "archivo recibido")) {
 				break;
 			}
@@ -463,7 +519,7 @@ void * client_thread(void * arg) {
 		if (equals(req.operation, "get")) {
 			//si el nombre no sirve o el archivo no existe (o es un enlace), se avisa con size -1
 			if (!valid_filename(req.filename) ||
-				snprintf(path, sizeof(path), "%s/%s", files_dir, req.filename) >= (int)sizeof(path) ||
+				snprintf(path, sizeof(path), "%s/%s", udir, req.filename) >= (int)sizeof(path) ||
 				lstat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
 				if (!send_not_found(c->socket, req.filename)) {
 					break;
@@ -473,7 +529,7 @@ void * client_thread(void * arg) {
 			if (!send_file(c->socket, path)) {
 				break; //el cliente ya espera el contenido: no hay forma de seguir
 			}
-			printf("Cliente %s:%d: enviado %s\n", c->ip, ntohs(c->address.sin_port), req.filename);
+			printf("Cliente %s:%d (%s): enviado %s\n", c->ip, ntohs(c->address.sin_port), c->user, req.filename);
 			continue;
 		}
 
@@ -497,8 +553,40 @@ int reply(int s, response_code code, const char * message) {
 	return write_all(s, &res, sizeof(res)) == (ssize_t)sizeof(res);
 }
 
-int reserve_name(const char * name, char * final, size_t size) {
+int send_list(int s, const char * dir) {
+	struct dirent ** names;
+	struct stat st;
+	file_info info;
+	char path[PATH_MAX];
+	int n, i, sent;
+
+	//se manda un file_info por archivo regular y, al final, uno con size -1
+	n = scandir(dir, &names, NULL, alphasort);
+	if (n < 0) {
+		return send_not_found(s, ""); //carpeta ilegible: lista vacia
+	}
+
+	sent = 1;
+	for (i = 0; i < n; i++) {
+		if (sent && names[i]->d_name[0] != '.' &&
+			snprintf(path, sizeof(path), "%s/%s", dir, names[i]->d_name) < (int)sizeof(path) &&
+			lstat(path, &st) == 0 && S_ISREG(st.st_mode)) {
+			memset(&info, 0, sizeof(info));
+			info.size = st.st_size;
+			info.mode = st.st_mode;
+			strncpy(info.filename, names[i]->d_name, sizeof(info.filename) - 1);
+			sent = (write_all(s, &info, sizeof(info)) == (ssize_t)sizeof(info));
+		}
+		free(names[i]);
+	}
+	free(names);
+
+	return sent && send_not_found(s, ""); //el ultimo mensaje, con size -1, cierra la lista
+}
+
+int reserve_name(const char * user, const char * name, char * final, size_t size) {
 	char candidate[NAME_MAX];
+	char key[USER_MAX + NAME_MAX + 2];
 	char path[PATH_MAX];
 	const char * dot;
 	int n, i, free_slot, taken;
@@ -518,15 +606,17 @@ int reserve_name(const char * name, char * final, size_t size) {
 			break; //con el sufijo el nombre no cabe
 		}
 
+		//la tabla guarda USUARIO/NOMBRE: dos usuarios distintos nunca chocan
+		snprintf(key, sizeof(key), "%s/%s", user, candidate);
 		taken = 0;
 		for (i = 0; i < MAXCLIENTS; i++) {
-			if (equals(busy[i], candidate)) {
+			if (equals(busy[i], key)) {
 				taken = 1;
 			}
 		}
 		//el nombre original puede sobrescribir uno que ya existe; los que llevan sufijo no
 		if (!taken && n > 0) {
-			taken = (snprintf(path, sizeof(path), "%s/%s", files_dir, candidate) >= (int)sizeof(path)
+			taken = (snprintf(path, sizeof(path), "%s/%s/%s", files_dir, user, candidate) >= (int)sizeof(path)
 				|| access(path, F_OK) == 0);
 		}
 		if (taken) {
@@ -537,7 +627,7 @@ int reserve_name(const char * name, char * final, size_t size) {
 		if (free_slot == MAXCLIENTS || strlen(candidate) >= size) {
 			break;
 		}
-		strcpy(busy[free_slot], candidate);
+		strcpy(busy[free_slot], key);
 		strcpy(final, candidate);
 		pthread_mutex_unlock(&busy_lock);
 		return 1;
@@ -547,12 +637,14 @@ int reserve_name(const char * name, char * final, size_t size) {
 	return 0;
 }
 
-void release_name(const char * name) {
+void release_name(const char * user, const char * name) {
+	char key[USER_MAX + NAME_MAX + 2];
 	int i;
 
+	snprintf(key, sizeof(key), "%s/%s", user, name);
 	pthread_mutex_lock(&busy_lock);
 	for (i = 0; i < MAXCLIENTS; i++) {
-		if (equals(busy[i], name)) {
+		if (equals(busy[i], key)) {
 			busy[i][0] = '\0';
 			break;
 		}

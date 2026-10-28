@@ -89,9 +89,20 @@ int do_put(int s, const char * path);
  */
 int do_get(int s, const char * client_dir, const char * name);
 
+/**
+ * @brief Pide al servidor la lista de los archivos del usuario y la muestra
+ *
+ * @param s Socket conectado al servidor
+ *
+ * @return 1 si la conexion sigue util, 0 si se perdio
+ */
+int do_list(int s);
+
 int main(int argc, char * argv[]) {
 	int s; // Conector
 	const char * host = "127.0.0.1"; // Servidor por defecto: esta misma maquina
+	char user[USER_MAX + 2] = ""; // Usuario con el que se identifica
+	response login; // Respuesta del servidor al identificarse
 	unsigned short port = DEFAULT_PORT; // Puerto por defecto
 	long value;
 	char * end;
@@ -104,14 +115,14 @@ int main(int argc, char * argv[]) {
 	int got; // Resultado de leer una linea
 	struct sigaction sa; // Manejador de SIGINT y SIGTERM
 
-	if (argc > 3) {
-		fprintf(stderr, "Uso: %s [ip] [puerto]\n", argv[0]);
+	if (argc > 4) {
+		fprintf(stderr, "Uso: %s [ip] [puerto] [usuario]\n", argv[0]);
 		exit(EXIT_FAILURE);
 	}
 	if (argc >= 2) {
 		host = argv[1];
 	}
-	if (argc == 3) {
+	if (argc >= 3) {
 		value = strtol(argv[2], &end, 10);
 		if (*argv[2] == '\0' || *end != '\0' || value < 1 || value > 65535) {
 			fprintf(stderr, "Puerto invalido: %s\n", argv[2]);
@@ -168,7 +179,37 @@ int main(int argc, char * argv[]) {
 		exit(EXIT_FAILURE);
 	}
 	free(addr);
-	printf("Conectado! Comandos: put ARCHIVO | get ARCHIVO | exit\n");
+	printf("Conectado!\n");
+
+	//Lo primero es decir quien es: cada usuario tiene su propia carpeta en el servidor
+	if (argc == 4) {
+		snprintf(user, sizeof(user), "%s", argv[3]);
+	} else {
+		printf("Usuario: ");
+		fflush(stdout);
+		if (fgets(user, sizeof(user), stdin) == NULL) {
+			close(s);
+			exit(EXIT_FAILURE);
+		}
+		user[strcspn(user, "\r\n")] = 0;
+	}
+	if (!valid_user(user)) {
+		fprintf(stderr, "Usuario no valido: de 1 a %d letras, numeros, _, - o .\n", USER_MAX);
+		close(s);
+		exit(EXIT_FAILURE);
+	}
+	if (!send_request(s, "user", user) || read_all(s, &login, sizeof(login)) != (ssize_t)sizeof(login)) {
+		fprintf(stderr, "Se perdio la conexion con el servidor\n");
+		close(s);
+		exit(EXIT_FAILURE);
+	}
+	login.message[sizeof(login.message) - 1] = 0;
+	if (login.code != TRANSFER_AUTHORIZED) {
+		fprintf(stderr, "Servidor: %s\n", login.message);
+		close(s);
+		exit(EXIT_FAILURE);
+	}
+	printf("Usuario %s. Comandos: put ARCHIVO | get ARCHIVO | list | exit\n", user);
 
 	// 3. Comunicacion: leer un comando, enviarlo y esperar la respuesta
 	while (1) {
@@ -209,6 +250,15 @@ int main(int argc, char * argv[]) {
 			break;
 		}
 
+		if (equals(cmd->parts[0], "list")) {
+			alive = do_list(s);
+			free_split_list(cmd);
+			if (!alive) {
+				break;
+			}
+			continue;
+		}
+
 		if (equals(cmd->parts[0], "put") || equals(cmd->parts[0], "get")) {
 			if (cmd->count < 2) {
 				printf("Uso: %s ARCHIVO\n", cmd->parts[0]);
@@ -224,7 +274,7 @@ int main(int argc, char * argv[]) {
 				break;
 			}
 		} else {
-			printf("Comando desconocido. Use: put ARCHIVO | get ARCHIVO | exit\n");
+			printf("Comando desconocido. Use: put ARCHIVO | get ARCHIVO | list | exit\n");
 		}
 
 		free_split_list(cmd);
@@ -340,4 +390,33 @@ void on_signal(int sig) {
 	(void)sig;
 	interrupted = 1;
 	protocol_abort = 1;
+}
+
+int do_list(int s) {
+	file_info info;
+	int count = 0;
+
+	if (!send_request(s, "list", "")) {
+		printf("Se perdio la conexion con el servidor\n");
+		return 0;
+	}
+
+	//un file_info por archivo; el que trae size -1 cierra la lista
+	while (1) {
+		if (read_all(s, &info, sizeof(info)) != (ssize_t)sizeof(info)) {
+			printf("Se perdio la conexion con el servidor\n");
+			return 0;
+		}
+		if (info.size < 0) {
+			break;
+		}
+		info.filename[sizeof(info.filename) - 1] = '\0';
+		printf("  %-30s %lld bytes\n", info.filename, (long long)info.size);
+		count++;
+	}
+
+	if (count == 0) {
+		printf("No hay archivos\n");
+	}
+	return 1;
 }

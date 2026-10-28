@@ -6,6 +6,7 @@
  * @author Miguel Angel Perez Mera
  */
 
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <libgen.h>
@@ -191,4 +192,18 @@ ssize_t write_all(int fd, const void * buf, size_t count) {
 	}
 
 	return total;
+}
+
+int valid_user(const char * name) {
+	size_t i, len = strlen(name);
+
+	if (len == 0 || len > USER_MAX || name[0] == '.') {
+		return 0;
+	}
+	for (i = 0; i < len; i++) {
+		if (!isalnum((unsigned char)name[i]) && name[i] != '_' && name[i] != '-' && name[i] != '.') {
+			return 0;
+		}
+	}
+	return 1;
 }

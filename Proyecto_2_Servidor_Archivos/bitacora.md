@@ -14,6 +14,10 @@ Mucho se parece al chat del taller 6 (hilo por cliente, lista con mutex) y a lo 
 
 Dividimos el trabajo en cinco commits: la base, `put`, `get`, señales y concurrencia, y la entrega.
 
+## 22 de octubre
+
+Nota del jueves: el servidor de archivos está anónimo. Cualquier cliente puede sobrescribir los archivos de otro. Hay que separar los archivos por cliente.
+
 ## 24 de octubre
 
 Primer commit, la base. El servidor acepta varios clientes, cada uno en su hilo, los mete en un arreglo de 256 posiciones con mutex y los saca al terminar. Muestra la IP, el puerto y cuántos hay conectados. El puerto sale de la línea de comandos. El cliente lee los comandos con el `split` del profe, y todo viaja como una `request` y una `response` de tamaño fijo. Para eso hice `read_all` y `write_all`, que repiten `read` y `write` hasta mover los bytes exactos, porque un `read` en un socket puede devolver menos de lo pedido.
@@ -143,3 +147,28 @@ Lo que quedó como está y vale saberlo:
 - El tamaño anunciado en una subida no se limita. Si alguien declara varios GB, el servidor empieza a escribir hasta que se acabe el disco o el cliente deje de mandar.
 
 El zip para el profe lleva los `.c`, los `.h`, el `Makefile` y un `README.txt` con los nombres, códigos y correos. La bitácora y el `Doxyfile` quedan solo en el repositorio.
+
+## 28 de octubre, list y carpetas por usuario
+
+Retomé la nota del jueves 22 y lo que dijo el profe de implementar `list`.
+
+El servidor ya no es anónimo. Lo primero que hace el cliente al conectarse es decir su usuario (`./client 127.0.0.1 1234 ana`, o lo pide por teclado), y el servidor crea `files/ana/`. Todo lo que ese cliente sube, baja o lista pasa por esa carpeta. Sin usuario, el servidor contesta "primero hay que identificarse" a todo menos a `exit`. Un usuario solo se puede declarar una vez por conexión, y el nombre tiene que ser de 1 a 32 letras, números, `_`, `-` o `.`, sin empezar por punto, así que no sirve para salirse de `files/`.
+
+Esto es identificar, no autenticar: no hay clave. Cualquiera puede escribir "ana" y ver los archivos de ana. Lo que sí cambia es que ya no se pisan por accidente, y que un cliente que no conozca el nombre de otro no llega a sus archivos. Si el profe pide algo más fuerte habría que agregar una clave por usuario, y eso no lo hice.
+
+`list` manda un `file_info` por cada archivo regular de la carpeta del usuario y uno final con tamaño -1 para cerrar la lista, la misma idea del -1 que ya usaba `get`. No muestra carpetas, enlaces, archivos que empiezan por punto ni temporales, y los manda ordenados.
+
+La reserva de nombres con sufijo ahora es por usuario: la tabla guarda `usuario/nombre`. Dos usuarios pueden subir a la vez un `notas.txt` sin estorbarse, y el sufijo solo aparece si es el mismo usuario con dos subidas del mismo nombre.
+
+Lo que falló: la primera corrida de pruebas contestó "ya está identificado" a todos. El arreglo `clients` reutiliza posiciones y yo no borraba el usuario del cliente anterior, así que el siguiente que caía en esa posición heredaba el usuario. Lo arreglé en `add_client`. También salieron dos advertencias de `snprintf` por posible truncado.
+
+Pruebas en la VM:
+
+- Nombres de usuario inválidos (`../etc`, `.oculto`, `a/b`, uno con espacio, uno vacío y uno de más de 32 letras): todos rechazados. Una segunda identificación en la misma conexión: rechazada.
+- `put`, `list` y `get` sin identificarse: los tres contestan que primero hay que identificarse.
+- Ana y beto suben un `notas.txt` con contenido distinto: quedan en `files/ana/` y `files/beto/` sin mezclarse. Beto intenta bajar `grande.bin` de ana y el servidor dice que no existe. Cuando beto sube otra vez su `notas.txt`, el de ana no cambia.
+- `list`: una carpeta vacía dice "No hay archivos". Con un directorio, un enlace simbólico, un archivo oculto y un temporal dentro de la carpeta de ana, solo salen sus dos archivos de verdad. Con 400 archivos salieron las 400 líneas.
+- Ana con una subida atascada de `mismo.txt` y beto subiendo `mismo.txt`: beto lo guarda con su nombre, sin sufijo. Ana subiendo otra vez el suyo: `mismo_1.txt`.
+- Repetí los sanitizadores con la carga mezclada, ahora con tres usuarios, y salieron sin avisos ni AddressSanitizer ni ThreadSanitizer. Doxygen sigue sin advertencias.
+
+Sin probar: muchos usuarios distintos a la vez (probé tres), y qué pasa si dos conexiones del mismo usuario hacen `get` de un archivo mientras otra lo sobrescribe. Con el `rename` el archivo nunca está a medias, pero un `get` que ya estaba mandando uno viejo seguiría con el viejo.
