@@ -41,15 +41,6 @@ Pruebas en la VM:
 
 Todavía no probé nada con archivos reales, porque `put` y `get` no están.
 
-## Lo que sigue
-
-- Commit 2: `put` completo. Falta decidir cómo validar el nombre (rechazar `/` y `..`) y pasar el tamaño de `int` a 64 bits.
-- Commit 3: `get`, con el tamaño -1 cuando no existe, y las líneas largas en el cliente.
-- Commit 4: SIGINT y SIGTERM en los dos, apagado ordenado, el sufijo para nombres repetidos y un límite de espera al leer.
-- Commit 5: Doxygen, comentarios, el README.txt, pruebas con varios clientes y archivos grandes, y el zip con `make clean`.
-
-Pendiente de preguntarle al profe si el README de entrega puede ser `.md` o tiene que ser `.txt`.
-
 ## 24 de octubre, más tarde
 
 Segundo commit, `put`. Cómo quedó el intercambio: el cliente manda la `request` con el nombre, el servidor revisa el nombre y contesta si autoriza, el cliente manda la información del archivo (nombre, tamaño y modo) y después el contenido, y al final el servidor confirma. Si algo falla a mitad, el servidor avisa y cierra la conexión, porque ya no sé en qué punto quedó el flujo.
