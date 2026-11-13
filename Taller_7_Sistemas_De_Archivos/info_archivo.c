@@ -27,6 +27,9 @@ static const char *tipo(mode_t mode) {
 
 int main(int argc, char *argv[]) {
 	struct stat st;
+	char perm[10];
+	const char *grupos = "rwxrwxrwx";
+	int i;
 
 	if (argc != 2) {
 		fprintf(stderr, "uso: %s archivo\n", argv[0]);
@@ -39,8 +42,15 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	//un bit por letra, de mayor a menor: dueno, grupo y otros
+	for (i = 0; i < 9; i++) {
+		perm[i] = (st.st_mode & (1 << (8 - i))) ? grupos[i] : '-';
+	}
+	perm[9] = '\0';
+
 	printf("archivo: %s\n", argv[1]);
 	printf("tamano: %lld bytes\n", (long long)st.st_size);
 	printf("tipo: %s\n", tipo(st.st_mode));
+	printf("permisos: %s (%04o)\n", perm, (unsigned)(st.st_mode & 07777));
 	return 0;
 }
