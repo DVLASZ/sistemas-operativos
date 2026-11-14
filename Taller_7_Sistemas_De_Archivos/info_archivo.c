@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <sys/stat.h>
+#include <time.h>
 
 /**
  * @brief Devuelve el nombre del tipo de archivo segun st_mode
@@ -28,6 +29,7 @@ static const char *tipo(mode_t mode) {
 int main(int argc, char *argv[]) {
 	struct stat st;
 	char perm[10];
+	char fecha[64];
 	const char *grupos = "rwxrwxrwx";
 	int i;
 
@@ -48,9 +50,13 @@ int main(int argc, char *argv[]) {
 	}
 	perm[9] = '\0';
 
+	strftime(fecha, sizeof(fecha), "%Y-%m-%d %H:%M:%S", localtime(&st.st_mtime));
+
 	printf("archivo: %s\n", argv[1]);
 	printf("tamano: %lld bytes\n", (long long)st.st_size);
 	printf("tipo: %s\n", tipo(st.st_mode));
 	printf("permisos: %s (%04o)\n", perm, (unsigned)(st.st_mode & 07777));
+	printf("enlaces: %lu\n", (unsigned long)st.st_nlink);
+	printf("ultima modificacion: %s\n", fecha);
 	return 0;
 }
