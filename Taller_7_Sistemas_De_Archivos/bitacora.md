@@ -36,3 +36,24 @@ El disco real es `sda1`, ext4, con el 29% de espacio usado. Lo demás es tmpfs, 
 
 Un sistema de archivos queda inutilizable con espacio libre cuando se acaban los inodos. Pasa con millones de archivos muy pequeños, como la caché de un programa o las sesiones de un servidor. Sobran bloques, pero crear cualquier archivo falla con "No space left on device" y `df -h` sigue mostrando espacio.
 
+### Punto 3
+
+Creé `archivo.txt` con tres líneas (54 bytes) y le hice `stat`, a él y a su carpeta.
+
+```
+$ stat archivo.txt
+  Size: 54        Blocks: 8          IO Block: 4096   regular file
+Device: 8,1       Inode: 2354862     Links: 1
+Access: (0664/-rw-rw-r--)  Uid: ( 1000/ ingesis)   Gid: ( 1000/ ingesis)
+
+$ stat .
+  Size: 4096      Blocks: 8          IO Block: 4096   directory
+Device: 8,1       Inode: 2354861     Links: 2
+Access: (0775/drwxrwxr-x)  Uid: ( 1000/ ingesis)   Gid: ( 1000/ ingesis)
+
+$ ls -li
+2354862 -rw-rw-r-- 1 ingesis ingesis 54 archivo.txt
+```
+
+El número del principio en `ls -li` es el inodo. El nombre `archivo.txt` está en el directorio, que es otro archivo (inodo 2354861) con una tabla de nombres e inodos.
+
