@@ -30,3 +30,9 @@ sr0
 
 El disco real es `sda1`, ext4, con el 29% de espacio usado. Lo demás es tmpfs, que vive en memoria.
 
+### Punto 2
+
+`df -h` cuenta bloques de datos y `df -i` cuenta inodos, las estructuras de metadatos. Cada archivo, directorio o enlace gasta uno, y en ext4 la cantidad se fija al formatear. En mi disco hay 2 485 504 y van 215 572, un 9%, mientras que el espacio va en el 29%.
+
+Un sistema de archivos queda inutilizable con espacio libre cuando se acaban los inodos. Pasa con millones de archivos muy pequeños, como la caché de un programa o las sesiones de un servidor. Sobran bloques, pero crear cualquier archivo falla con "No space left on device" y `df -h` sigue mostrando espacio.
+
