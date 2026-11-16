@@ -57,3 +57,28 @@ $ ls -li
 
 El número del principio en `ls -li` es el inodo. El nombre `archivo.txt` está en el directorio, que es otro archivo (inodo 2354861) con una tabla de nombres e inodos.
 
+## Segunda parte
+
+Punto 4:
+
+```
+$ ln archivo.txt duro.txt
+$ ln -s archivo.txt simbolico.txt
+$ ls -li archivo.txt duro.txt simbolico.txt
+2354862 -rw-rw-r-- 2 ingesis ingesis 54 archivo.txt
+2354862 -rw-rw-r-- 2 ingesis ingesis 54 duro.txt
+2354863 lrwxrwxrwx 1 ingesis ingesis 11 simbolico.txt -> archivo.txt
+```
+
+### Punto 5
+
+| nombre | inodo | enlaces | tamaño |
+|---|---|---|---|
+| archivo.txt | 2354862 | 2 | 54 |
+| duro.txt | 2354862 | 2 | 54 |
+| simbolico.txt | 2354863 | 1 | 11 |
+
+`archivo.txt` y `duro.txt` son dos nombres del mismo archivo: mismo inodo y contador en 2. El enlace simbólico es otro archivo, con su inodo y su contador en 1, y lo que guarda es el texto "archivo.txt". Por eso mide 11 y no 54.
+
+Me equivoqué en la primera corrida. Había escrito "hola mundo" en el archivo, que con el salto de línea son 11 bytes, igual que las letras de "archivo.txt". Daban lo mismo y no se veía la diferencia. Repetí con tres líneas.
+
