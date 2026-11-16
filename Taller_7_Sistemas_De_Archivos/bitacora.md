@@ -82,3 +82,19 @@ $ ls -li archivo.txt duro.txt simbolico.txt
 
 Me equivoqué en la primera corrida. Había escrito "hola mundo" en el archivo, que con el salto de línea son 11 bytes, igual que las letras de "archivo.txt". Daban lo mismo y no se veía la diferencia. Repetí con tres líneas.
 
+### Punto 6
+
+```
+$ rm archivo.txt
+$ cat duro.txt
+primera linea del archivo
+segunda linea
+tercera linea
+$ cat simbolico.txt
+cat: simbolico.txt: No such file or directory
+```
+
+`rm` borra un nombre, no el archivo: quita la entrada del directorio y baja el contador. Los datos se liberan cuando el contador llega a 0 y nadie los tiene abiertos. Aquí quedó en 1, así que `duro.txt` sigue igual, porque no era una copia sino otro nombre del mismo inodo.
+
+El enlace simbólico busca el texto "archivo.txt" cada vez que se abre. Ese nombre ya no existe y por eso `cat` falla.
+
