@@ -98,3 +98,21 @@ cat: simbolico.txt: No such file or directory
 
 El enlace simbólico busca el texto "archivo.txt" cada vez que se abre. Ese nombre ya no existe y por eso `cat` falla.
 
+### Punto 7
+
+```
+$ ln duro.txt /tmp/duro_otro_fs.txt
+ln: failed to create hard link '/tmp/duro_otro_fs.txt' => 'duro.txt': Invalid cross-device link
+$ ln -s ~/prueba/duro.txt /tmp/simb_otro_fs.txt
+$ cat /tmp/simb_otro_fs.txt
+primera linea del archivo
+segunda linea
+tercera linea
+```
+
+Con `stat` vi que `duro.txt` está en el dispositivo 2049 (ext4) con inodo 2354862, y un archivo nuevo en `/tmp` quedó en el dispositivo 34 (tmpfs) con inodo 45.
+
+Los números de inodo solo valen dentro de su sistema de archivos, porque cada uno cuenta por su lado. Un enlace duro es un nombre más un número de inodo, y en otro sistema ese número sería otro archivo o ninguno. Por eso `ln` lo rechaza.
+
+El enlace simbólico guarda una ruta escrita, no un inodo. El kernel la recorre desde la raíz al abrirlo y esa ruta puede pasar por cualquier sistema montado.
+
