@@ -120,3 +120,30 @@ El enlace simbólico guarda una ruta escrita, no un inodo. El kernel la recorre 
 
 Escribí `info_archivo.c` con `lstat`. Con `stat` un enlace simbólico se vería como el archivo al que apunta y no se podría ver su propio tamaño, que es justo el error que el taller marca. Compila sin advertencias con `gcc -Wall -Wextra`.
 
+### Punto 9
+
+```
+$ ./info_archivo normal.txt
+tamano: 13 bytes
+tipo: archivo regular
+permisos: rw-rw-r-- (0664)
+enlaces: 1
+
+$ ./info_archivo carpeta
+tamano: 4096 bytes
+tipo: directorio
+permisos: rwxrwxr-x (0775)
+enlaces: 2
+
+$ ./info_archivo enlace_a_normal
+tamano: 10 bytes
+tipo: enlace simbolico
+permisos: rwxrwxrwx (0777)
+enlaces: 1
+```
+
+Quité de estas salidas las líneas de nombre y de última modificación para abreviar. Los valores coinciden con `ls -l`.
+
+- El archivo normal mide 13 bytes, lo que tiene adentro. En `rw-rw-r--` los primeros tres son del dueño, los siguientes del grupo y los últimos de los demás: dueño y grupo leen y escriben, los demás solo leen.
+- El directorio mide 4096. No es lo que contienen sus archivos, es el bloque donde guarda su tabla de nombres e inodos. Un directorio también es un archivo, de tipo especial. Tiene 2 enlaces: su nombre en el padre y su propio `.`, y cada subcarpeta suma uno por su `..`.
+- El enlace simbólico mide 10, las letras de "normal.txt", y no los 13 del archivo. Sus permisos son siempre `rwxrwxrwx` y no cuentan, porque al abrirlo se revisan los del destino. Con `stat -L`, que sigue el enlace, da 13 bytes. Esa es la diferencia entre `lstat` y `stat`.
