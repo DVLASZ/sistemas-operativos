@@ -116,3 +116,7 @@ Los números de inodo solo valen dentro de su sistema de archivos, porque cada u
 
 El enlace simbólico guarda una ruta escrita, no un inodo. El kernel la recorre desde la raíz al abrirlo y esa ruta puede pasar por cualquier sistema montado.
 
+## Tercera parte
+
+Escribí `info_archivo.c` con `lstat`. Con `stat` un enlace simbólico se vería como el archivo al que apunta y no se podría ver su propio tamaño, que es justo el error que el taller marca. Compila sin advertencias con `gcc -Wall -Wextra`.
+
