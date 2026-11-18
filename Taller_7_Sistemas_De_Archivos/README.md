@@ -11,4 +11,6 @@ make
 ./info_archivo archivo.txt
 ```
 
+La documentación con Doxygen se genera con `make doc` y queda en `docs/html/index.html`.
+
 Las observaciones de las partes 1 y 2 y las respuestas están en `bitacora.md`.
