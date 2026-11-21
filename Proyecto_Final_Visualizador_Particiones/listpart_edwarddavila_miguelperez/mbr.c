@@ -1,3 +1,11 @@
+/**
+ * @file
+ * @brief Tipos de particion MBR y lectura de los campos de un descriptor
+ * @author Erwin Meza Vega <emezav@unicauca.edu.co>
+ * @author Edward Esteban Dávila Salazar
+ * @author Miguel Angel Perez Mera
+ */
+
 #include <string.h>
 
 #include "mbr.h"
@@ -262,11 +270,49 @@ const char * mbr_partition_types[256] = {
 };
 
 int is_mbr(mbr * boot_record) {
-	/* TODO verificar si el bootsector leido es valido. */
-	return 0;
+	return boot_record->signature == MBR_SIGNATURE;
 }
 
 
 void mbr_partition_type(unsigned char type, char buf[TYPE_NAME_LEN]) {
-	/* TODO rellenar el en buffer el nombre textual del tipo de particion */
+	strncpy(buf, mbr_partition_types[type], TYPE_NAME_LEN - 1);
+	buf[TYPE_NAME_LEN - 1] = '\0';
+}
+
+
+int mbr_is_extended(unsigned char type) {
+	return type == 0x05 || type == 0x0F || type == 0x85;
+}
+
+
+unsigned int mbr_chs_cylinder(const unsigned char chs[3]) {
+	//dos bits altos del byte del sector + los ocho bits del tercer byte
+	return ((chs[1] & 0xC0) << 2) | chs[2];
+}
+
+
+unsigned int mbr_chs_head(const unsigned char chs[3]) {
+	return chs[0];
+}
+
+
+unsigned int mbr_chs_sector(const unsigned char chs[3]) {
+	return chs[1] & 0x3F;
+}
+
+
+unsigned long long mbr_chs_to_lba(const unsigned char chs[3]) {
+	unsigned int s = mbr_chs_sector(chs);
+
+	//un sector 0 no existe en C/H/S, se evita el desbordamiento del (s - 1)
+	if (s == 0) {
+		s = 1;
+	}
+	return ((unsigned long long)mbr_chs_cylinder(chs) * 16 * 63) +
+		((unsigned long long)mbr_chs_head(chs) * 63) + (s - 1);
+}
+
+
+int mbr_chs_is_lba_marker(const unsigned char chs[3]) {
+	return chs[0] == 0xFE && chs[1] == 0xFF && chs[2] == 0xFF;
 }
